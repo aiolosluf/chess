@@ -1068,19 +1068,43 @@ select {
   color: #d98a00;
 }
 
-.move-row button.branch-ply {
-  color: #24736a;
-}
-
-.move-row button.branch-ply::before {
-  content: "↳ ";
-}
-
 .move-row button.current.mistake-ply {
   color: #202020;
 }
 
-.move-row button.current.branch-ply {
+.variation-row {
+  background: #f7faf7;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  min-height: 30px;
+}
+
+.variation-line {
+  align-items: center;
+  border-left: 2px solid #b7b7b7;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 4px 8px;
+}
+
+.variation-prefix {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.variation-line button {
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: #24736a;
+  font-weight: 700;
+  min-height: 24px;
+  padding: 1px 3px;
+}
+
+.variation-line button.current {
+  background: #ffeb3b;
   color: #202020;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   type ChangeEvent,
   type DragEvent,
   useCallback,
@@ -100,6 +101,8 @@ type AnalysisNode = {
   san: string;
   from: string;
   to: string;
+  parentIndex: number | null;
+  variationId: string | null;
   ply: number;
   moveNumber: number;
   color: "w" | "b";
@@ -585,6 +588,10 @@ function evalPercent(cp: number) {
   return Math.round(50 + (clamped / 900) * 50);
 }
 
+function scoreForWhite(cp: number, fen: string) {
+  return fen.split(/\s+/)[1] === "b" ? -cp : cp;
+}
+
 function analysisNodesFromPgn(pgn: string, fallbackFen: string): AnalysisNode[] {
   if (!pgn) {
     return [
@@ -593,6 +600,8 @@ function analysisNodesFromPgn(pgn: string, fallbackFen: string): AnalysisNode[] 
         san: "",
         from: "",
         to: "",
+        parentIndex: null,
+        variationId: null,
         ply: 0,
         moveNumber: 0,
         color: "w",
@@ -613,6 +622,8 @@ function analysisNodesFromPgn(pgn: string, fallbackFen: string): AnalysisNode[] 
         san: "",
         from: "",
         to: "",
+        parentIndex: null,
+        variationId: null,
         ply: 0,
         moveNumber: 0,
         color: "w",
@@ -623,6 +634,8 @@ function analysisNodesFromPgn(pgn: string, fallbackFen: string): AnalysisNode[] 
         san: move.san,
         from: move.from,
         to: move.to,
+        parentIndex: index,
+        variationId: null,
         ply: index + 1,
         moveNumber: Math.floor(index / 2) + 1,
         color: move.color,
@@ -636,6 +649,8 @@ function analysisNodesFromPgn(pgn: string, fallbackFen: string): AnalysisNode[] 
         san: "",
         from: "",
         to: "",
+        parentIndex: null,
+        variationId: null,
         ply: 0,
         moveNumber: 0,
         color: "w",
@@ -1741,6 +1756,7 @@ export default function Home() {
 
       {analysisPuzzle ? (
         <AnalysisPanel
+          key={analysisPuzzle.id}
           puzzle={analysisPuzzle}
           copy={copy}
           onClose={() => setAnalysisPuzzle(null)}
@@ -1775,7 +1791,9 @@ function AnalysisPanel({
   const [searchDepth, setSearchDepth] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const engineRef = useRef<BrowserStockfish | null>(null);
+  const moveButtonRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const fen = nodes[currentIndex]?.fen ?? puzzle.fenBefore;
+  const currentNode = nodes[currentIndex] ?? nodes[0];
 
   const chess = useMemo(() => {
     try {
@@ -1807,6 +1825,11 @@ function AnalysisPanel({
     }
   }, [chess, selectedSquare]);
 
+  const mainNodes = useMemo(
+    () => nodes.filter((node) => node.isMainLine),
+    [nodes]
+  );
+
   const moveRows = useMemo(() => {
     const rows: {
       moveNumber: number;
@@ -1814,7 +1837,7 @@ function AnalysisPanel({
       black?: AnalysisNode;
     }[] = [];
 
-    for (const node of nodes.slice(1)) {
+    for (const node of mainNodes.slice(1)) {
       let row = rows.find((item) => item.moveNumber === node.moveNumber);
       if (!row) {
         row = { moveNumber: node.moveNumber };
@@ -1829,9 +1852,54 @@ function AnalysisPanel({
     }
 
     return rows;
+  }, [mainNodes]);
+
+  const variationLines = useMemo(() => {
+    const groups = new Map<string, AnalysisNode[]>();
+    const roots: {
+      id: string;
+      parentIndex: number;
+      nodes: AnalysisNode[];
+    }[] = [];
+
+    nodes.forEach((node) => {
+      if (!node.variationId) {
+        return;
+      }
+
+      const group = groups.get(node.variationId) ?? [];
+      group.push(node);
+      groups.set(node.variationId, group);
+    });
+
+    for (const [id, group] of groups) {
+      const first = group[0];
+      if (first?.parentIndex === null || first?.parentIndex === undefined) {
+        continue;
+      }
+
+      roots.push({ id, parentIndex: first.parentIndex, nodes: group });
+    }
+
+    return roots;
   }, [nodes]);
 
+  const variationsByMoveNumber = useMemo(() => {
+    const byMove = new Map<number, typeof variationLines>();
+
+    for (const variation of variationLines) {
+      const parentNode = nodes[variation.parentIndex];
+      const moveNumber = Math.max(1, parentNode?.moveNumber || variation.nodes[0]?.moveNumber || 1);
+      const group = byMove.get(moveNumber) ?? [];
+      group.push(variation);
+      byMove.set(moveNumber, group);
+    }
+
+    return byMove;
+  }, [nodes, variationLines]);
+
   const maxIndex = nodes.length - 1;
+  const mainLastIndex = Math.max(0, mainNodes.length - 1);
 
   useEffect(() => {
     let cancelled = false;
@@ -1852,10 +1920,11 @@ function AnalysisPanel({
           setEngineLines(
             result.lines.map((line) => ({
               ...line,
+              scoreCp: scoreForWhite(line.scoreCp, fen),
               depth: line.depth ?? depth,
             }))
           );
-          setScoreCp(result.scoreCp);
+          setScoreCp(scoreForWhite(result.scoreCp, fen));
         }
       } catch {
         if (!cancelled) {
@@ -1909,17 +1978,20 @@ function AnalysisPanel({
     try {
       const next = new Chess(fen);
       const move = next.move({ from, to, promotion: "q" });
+      const fullMove = Number(fen.split(/\s+/)[5] ?? "1") || 1;
       const nextNode: AnalysisNode = {
         fen: next.fen(),
         san: move.san,
         from: move.from,
         to: move.to,
-        ply: currentIndex + 1,
-        moveNumber: Math.floor(currentIndex / 2) + 1,
+        parentIndex: currentIndex,
+        variationId: currentNode?.variationId ?? `v-${Date.now()}-${nodes.length}`,
+        ply: (currentNode?.ply ?? currentIndex) + 1,
+        moveNumber: fullMove,
         color: move.color,
         isMainLine: false,
       };
-      const nextNodes = [...nodes.slice(0, currentIndex + 1), nextNode];
+      const nextNodes = [...nodes, nextNode];
       setNodes(nextNodes);
       setCurrentIndex(nextNodes.length - 1);
       setSelectedSquare(null);
@@ -1934,26 +2006,75 @@ function AnalysisPanel({
     setSelectedSquare(null);
   }, [maxIndex]);
 
+  const previousIndex = useCallback(() => {
+    const node = nodes[currentIndex];
+    if (!node || currentIndex === 0) {
+      return 0;
+    }
+
+    return node.isMainLine ? Math.max(0, currentIndex - 1) : node.parentIndex ?? 0;
+  }, [currentIndex, nodes]);
+
+  const nextIndex = useCallback(() => {
+    const node = nodes[currentIndex];
+    if (!node) {
+      return currentIndex;
+    }
+
+    if (node.isMainLine) {
+      return Math.min(mainLastIndex, currentIndex + 1);
+    }
+
+    const childIndex = nodes.findIndex(
+      (candidate) =>
+        candidate.parentIndex === currentIndex &&
+        candidate.variationId === node.variationId
+    );
+    return childIndex >= 0 ? childIndex : currentIndex;
+  }, [currentIndex, mainLastIndex, nodes]);
+
+  const endIndex = useCallback(() => {
+    const node = nodes[currentIndex];
+    if (!node?.variationId) {
+      return mainLastIndex;
+    }
+
+    for (let index = nodes.length - 1; index >= 0; index -= 1) {
+      if (nodes[index].variationId === node.variationId) {
+        return index;
+      }
+    }
+
+    return currentIndex;
+  }, [currentIndex, mainLastIndex, nodes]);
+
+  useEffect(() => {
+    moveButtonRefs.current[currentIndex]?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [currentIndex, moveRows, variationLines]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        goToIndex(currentIndex - 1);
+        goToIndex(previousIndex());
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        goToIndex(currentIndex + 1);
+        goToIndex(nextIndex());
       } else if (event.key === "ArrowUp") {
         event.preventDefault();
         goToIndex(0);
       } else if (event.key === "ArrowDown") {
         event.preventDefault();
-        goToIndex(maxIndex);
+        goToIndex(endIndex());
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentIndex, goToIndex, maxIndex]);
+  }, [endIndex, goToIndex, nextIndex, previousIndex]);
 
   return (
     <div className="analysis-overlay" role="dialog" aria-modal="true">
@@ -2017,48 +2138,101 @@ function AnalysisPanel({
             <div className="analysis-box">
               <div className="result-head">
                 <strong>{copy.gameRecord}</strong>
-                <span>{currentIndex}/{maxIndex}</span>
+                <span>{currentNode?.variationId ? "↳ " : ""}{currentNode?.ply ?? 0}/{mainLastIndex}</span>
               </div>
               <div className="move-nav-buttons" aria-label="move navigation">
                 <button type="button" onClick={() => goToIndex(0)}>{"<<"}</button>
-                <button type="button" onClick={() => goToIndex(currentIndex - 1)}>{"<"}</button>
-                <button type="button" onClick={() => goToIndex(currentIndex + 1)}>{">"}</button>
-                <button type="button" onClick={() => goToIndex(maxIndex)}>{">>"}</button>
+                <button type="button" onClick={() => goToIndex(previousIndex())}>{"<"}</button>
+                <button type="button" onClick={() => goToIndex(nextIndex())}>{">"}</button>
+                <button type="button" onClick={() => goToIndex(endIndex())}>{">>"}</button>
               </div>
               <div className="move-table">
                 {moveRows.length ? (
-                  moveRows.map((row) => (
-                    <div className="move-row" key={row.moveNumber}>
-                      <span className="move-number">{row.moveNumber}.</span>
-                      <button
-                        type="button"
-                        className={[
-                          row.white && nodes.indexOf(row.white) === currentIndex ? "current" : "",
-                          row.white?.ply === puzzle.ply && row.white.isMainLine ? "mistake-ply" : "",
-                          row.white && !row.white.isMainLine ? "branch-ply" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        onClick={() => row.white && goToIndex(nodes.indexOf(row.white))}
-                      >
-                        {row.white?.san ?? ""}
-                      </button>
-                      <button
-                        type="button"
-                        className={[
-                          row.black && nodes.indexOf(row.black) === currentIndex ? "current" : "",
-                          row.black?.ply === puzzle.ply && row.black.isMainLine ? "mistake-ply" : "",
-                          row.black && !row.black.isMainLine ? "branch-ply" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        onClick={() => row.black && goToIndex(nodes.indexOf(row.black))}
-                        disabled={!row.black}
-                      >
-                        {row.black?.san ?? ""}
-                      </button>
-                    </div>
-                  ))
+                  moveRows.map((row) => {
+                    const whiteIndex = row.white ? nodes.indexOf(row.white) : -1;
+                    const blackIndex = row.black ? nodes.indexOf(row.black) : -1;
+                    const variations = variationsByMoveNumber.get(row.moveNumber) ?? [];
+
+                    return (
+                      <Fragment key={row.moveNumber}>
+                        <div className="move-row">
+                          <span className="move-number">{row.moveNumber}.</span>
+                          <button
+                            type="button"
+                            ref={(element) => {
+                              if (whiteIndex >= 0) {
+                                moveButtonRefs.current[whiteIndex] = element;
+                              }
+                            }}
+                            className={[
+                              whiteIndex === currentIndex ? "current" : "",
+                              row.white?.ply === puzzle.ply && row.white.isMainLine ? "mistake-ply" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            onClick={() => whiteIndex >= 0 && goToIndex(whiteIndex)}
+                          >
+                            {row.white?.san ?? ""}
+                          </button>
+                          <button
+                            type="button"
+                            ref={(element) => {
+                              if (blackIndex >= 0) {
+                                moveButtonRefs.current[blackIndex] = element;
+                              }
+                            }}
+                            className={[
+                              blackIndex === currentIndex ? "current" : "",
+                              row.black?.ply === puzzle.ply && row.black.isMainLine ? "mistake-ply" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            onClick={() => blackIndex >= 0 && goToIndex(blackIndex)}
+                            disabled={!row.black}
+                          >
+                            {row.black?.san ?? ""}
+                          </button>
+                        </div>
+                        {variations.map((variation) => (
+                          <div className="variation-row" key={variation.id}>
+                            <span aria-hidden="true" />
+                            <div className="variation-line">
+                              {variation.nodes.map((node, nodeOffset) => {
+                                const nodeIndex = nodes.indexOf(node);
+                                const prefix =
+                                  node.color === "w"
+                                    ? `${node.moveNumber}.`
+                                    : nodeOffset === 0
+                                    ? `${node.moveNumber}...`
+                                    : "";
+
+                                return (
+                                  <Fragment key={nodeIndex}>
+                                    {prefix ? <span className="variation-prefix">{prefix}</span> : null}
+                                    <button
+                                      type="button"
+                                      ref={(element) => {
+                                        moveButtonRefs.current[nodeIndex] = element;
+                                      }}
+                                      className={[
+                                        "branch-ply",
+                                        nodeIndex === currentIndex ? "current" : "",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                      onClick={() => goToIndex(nodeIndex)}
+                                    >
+                                      {node.san}
+                                    </button>
+                                  </Fragment>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </Fragment>
+                    );
+                  })
                 ) : (
                   <p className="move-record">{puzzle.gamePgn || puzzle.gameTitle}</p>
                 )}
