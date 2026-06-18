@@ -2,6 +2,7 @@
 
 import {
   Fragment,
+  type CSSProperties,
   type ChangeEvent,
   type DragEvent,
   useCallback,
@@ -107,6 +108,12 @@ type AnalysisNode = {
   moveNumber: number;
   color: "w" | "b";
   isMainLine: boolean;
+};
+
+type VariationLine = {
+  id: string;
+  parentIndex: number;
+  nodes: AnalysisNode[];
 };
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -1856,11 +1863,7 @@ function AnalysisPanel({
 
   const variationLines = useMemo(() => {
     const groups = new Map<string, AnalysisNode[]>();
-    const roots: {
-      id: string;
-      parentIndex: number;
-      nodes: AnalysisNode[];
-    }[] = [];
+    const lines: VariationLine[] = [];
 
     nodes.forEach((node) => {
       if (!node.variationId) {
@@ -1878,25 +1881,23 @@ function AnalysisPanel({
         continue;
       }
 
-      roots.push({ id, parentIndex: first.parentIndex, nodes: group });
+      lines.push({ id, parentIndex: first.parentIndex, nodes: group });
     }
 
-    return roots;
+    return lines;
   }, [nodes]);
 
-  const variationsByMoveNumber = useMemo(() => {
-    const byMove = new Map<number, typeof variationLines>();
+  const variationsByParent = useMemo(() => {
+    const byParent = new Map<number, VariationLine[]>();
 
     for (const variation of variationLines) {
-      const parentNode = nodes[variation.parentIndex];
-      const moveNumber = Math.max(1, parentNode?.moveNumber || variation.nodes[0]?.moveNumber || 1);
-      const group = byMove.get(moveNumber) ?? [];
+      const group = byParent.get(variation.parentIndex) ?? [];
       group.push(variation);
-      byMove.set(moveNumber, group);
+      byParent.set(variation.parentIndex, group);
     }
 
-    return byMove;
-  }, [nodes, variationLines]);
+    return byParent;
+  }, [variationLines]);
 
   const maxIndex = nodes.length - 1;
   const mainLastIndex = Math.max(0, mainNodes.length - 1);
@@ -1979,13 +1980,23 @@ function AnalysisPanel({
       const next = new Chess(fen);
       const move = next.move({ from, to, promotion: "q" });
       const fullMove = Number(fen.split(/\s+/)[5] ?? "1") || 1;
+      const existingContinuation = nodes.some(
+        (node) =>
+          node.parentIndex === currentIndex &&
+          node.variationId === currentNode?.variationId
+      );
+      const continuesVariation = Boolean(
+        currentNode?.variationId && !existingContinuation
+      );
       const nextNode: AnalysisNode = {
         fen: next.fen(),
         san: move.san,
         from: move.from,
         to: move.to,
         parentIndex: currentIndex,
-        variationId: currentNode?.variationId ?? `v-${Date.now()}-${nodes.length}`,
+        variationId: continuesVariation
+          ? currentNode.variationId
+          : `v-${Date.now()}-${nodes.length}`,
         ply: (currentNode?.ply ?? currentIndex) + 1,
         moveNumber: fullMove,
         color: move.color,
@@ -2076,6 +2087,59 @@ function AnalysisPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [endIndex, goToIndex, nextIndex, previousIndex]);
 
+  function renderVariationLine(variation: VariationLine, depth: number) {
+    return (
+      <Fragment key={variation.id}>
+        <div
+          className="variation-row"
+          style={
+            { "--variation-indent": `${Math.max(0, depth - 1) * 18}px` } as CSSProperties
+          }
+        >
+          <span aria-hidden="true" />
+          <div className="variation-line">
+            {variation.nodes.map((node, nodeOffset) => {
+              const nodeIndex = nodes.indexOf(node);
+              const prefix =
+                node.color === "w"
+                  ? `${node.moveNumber}.`
+                  : nodeOffset === 0
+                  ? `${node.moveNumber}...`
+                  : "";
+
+              return (
+                <Fragment key={nodeIndex}>
+                  {prefix ? <span className="variation-prefix">{prefix}</span> : null}
+                  <button
+                    type="button"
+                    ref={(element) => {
+                      moveButtonRefs.current[nodeIndex] = element;
+                    }}
+                    className={[
+                      "branch-ply",
+                      nodeIndex === currentIndex ? "current" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => goToIndex(nodeIndex)}
+                  >
+                    {node.san}
+                  </button>
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+        {variation.nodes.flatMap((node) => {
+          const nodeIndex = nodes.indexOf(node);
+          return (variationsByParent.get(nodeIndex) ?? []).map((child) =>
+            renderVariationLine(child, depth + 1)
+          );
+        })}
+      </Fragment>
+    );
+  }
+
   return (
     <div className="analysis-overlay" role="dialog" aria-modal="true">
       <section className="analysis-sheet">
@@ -2151,7 +2215,10 @@ function AnalysisPanel({
                   moveRows.map((row) => {
                     const whiteIndex = row.white ? nodes.indexOf(row.white) : -1;
                     const blackIndex = row.black ? nodes.indexOf(row.black) : -1;
-                    const variations = variationsByMoveNumber.get(row.moveNumber) ?? [];
+                    const rowVariations = [
+                      ...(whiteIndex >= 0 ? variationsByParent.get(whiteIndex) ?? [] : []),
+                      ...(blackIndex >= 0 ? variationsByParent.get(blackIndex) ?? [] : []),
+                    ];
 
                     return (
                       <Fragment key={row.moveNumber}>
@@ -2193,43 +2260,7 @@ function AnalysisPanel({
                             {row.black?.san ?? ""}
                           </button>
                         </div>
-                        {variations.map((variation) => (
-                          <div className="variation-row" key={variation.id}>
-                            <span aria-hidden="true" />
-                            <div className="variation-line">
-                              {variation.nodes.map((node, nodeOffset) => {
-                                const nodeIndex = nodes.indexOf(node);
-                                const prefix =
-                                  node.color === "w"
-                                    ? `${node.moveNumber}.`
-                                    : nodeOffset === 0
-                                    ? `${node.moveNumber}...`
-                                    : "";
-
-                                return (
-                                  <Fragment key={nodeIndex}>
-                                    {prefix ? <span className="variation-prefix">{prefix}</span> : null}
-                                    <button
-                                      type="button"
-                                      ref={(element) => {
-                                        moveButtonRefs.current[nodeIndex] = element;
-                                      }}
-                                      className={[
-                                        "branch-ply",
-                                        nodeIndex === currentIndex ? "current" : "",
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" ")}
-                                      onClick={() => goToIndex(nodeIndex)}
-                                    >
-                                      {node.san}
-                                    </button>
-                                  </Fragment>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
+                        {rowVariations.map((variation) => renderVariationLine(variation, 1))}
                       </Fragment>
                     );
                   })
