@@ -882,6 +882,11 @@ input:focus {
   width: 100%;
 }
 
+.settings-panel .action-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(160px, 1fr);
+}
+
 .compact-title {
   margin-bottom: 0;
 }
@@ -1306,6 +1311,10 @@ input:focus {
 
   .settings-game-row {
     align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .settings-panel .action-row {
     grid-template-columns: 1fr;
   }
 }

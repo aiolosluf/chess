@@ -1,6 +1,7 @@
 import { getPuzzleD1 } from "@/db";
 
 const PUZZLE_API_SCHEMA_VERSION = 3;
+const SQL_CHUNK_SIZE = 80;
 
 type IncomingPuzzle = {
   dedupeKey?: string;
@@ -36,6 +37,15 @@ function cleanText(value: unknown, fallback = "") {
 
 function toRouteErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unexpected error";
+}
+
+function chunks<T>(items: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+
+  return result;
 }
 
 async function ensureExtendedPuzzleColumns(db: D1Database) {
@@ -206,17 +216,20 @@ export async function POST(request: Request) {
 
     const db = await getPuzzleD1();
     await ensureExtendedPuzzleColumns(db);
-    const existing = await db
-      .prepare(
-        `SELECT dedupe_key AS dedupeKey
-        FROM puzzles
-        WHERE dedupe_key IN (${puzzles.map(() => "?").join(",")})`
-      )
-      .bind(...puzzles.map((puzzle) => puzzle.dedupeKey))
-      .all();
-    const existingKeys = new Set(
-      (existing.results ?? []).map((row) => String(row.dedupeKey))
-    );
+    const existingKeys = new Set<string>();
+    for (const puzzleChunk of chunks(puzzles, SQL_CHUNK_SIZE)) {
+      const existing = await db
+        .prepare(
+          `SELECT dedupe_key AS dedupeKey
+          FROM puzzles
+          WHERE dedupe_key IN (${puzzleChunk.map(() => "?").join(",")})`
+        )
+        .bind(...puzzleChunk.map((puzzle) => puzzle.dedupeKey))
+        .all();
+      for (const row of existing.results ?? []) {
+        existingKeys.add(String(row.dedupeKey));
+      }
+    }
     const uniquePuzzles = puzzles.filter(
       (puzzle, index, all) =>
         !existingKeys.has(puzzle.dedupeKey) &&
@@ -257,39 +270,41 @@ export async function POST(request: Request) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
-    await db.batch(
-      uniquePuzzles.map((puzzle) =>
-        insert.bind(
-          puzzle.sourceName,
-          puzzle.sourcePlatform,
-          puzzle.sourceUsername,
-          Number.isFinite(puzzle.sourceGameId ?? Number.NaN)
-            ? puzzle.sourceGameId
-            : null,
-          puzzle.dedupeKey,
-          puzzle.gamePgn,
-          puzzle.gameHeaders,
-          puzzle.gameTitle,
-          puzzle.white,
-          puzzle.black,
-          puzzle.event,
-          puzzle.playedAt,
-          puzzle.moveNumber,
-          puzzle.ply,
-          puzzle.side,
-          puzzle.previousMoveSan,
-          puzzle.previousMoveUci,
-          puzzle.fenBefore,
-          puzzle.fenAfter,
-          puzzle.playedMoveSan,
-          puzzle.playedMoveUci,
-          puzzle.bestMoveSan,
-          puzzle.bestMoveUci,
-          puzzle.lossCp,
-          puzzle.severity
+    for (const puzzleChunk of chunks(uniquePuzzles, SQL_CHUNK_SIZE)) {
+      await db.batch(
+        puzzleChunk.map((puzzle) =>
+          insert.bind(
+            puzzle.sourceName,
+            puzzle.sourcePlatform,
+            puzzle.sourceUsername,
+            Number.isFinite(puzzle.sourceGameId ?? Number.NaN)
+              ? puzzle.sourceGameId
+              : null,
+            puzzle.dedupeKey,
+            puzzle.gamePgn,
+            puzzle.gameHeaders,
+            puzzle.gameTitle,
+            puzzle.white,
+            puzzle.black,
+            puzzle.event,
+            puzzle.playedAt,
+            puzzle.moveNumber,
+            puzzle.ply,
+            puzzle.side,
+            puzzle.previousMoveSan,
+            puzzle.previousMoveUci,
+            puzzle.fenBefore,
+            puzzle.fenAfter,
+            puzzle.playedMoveSan,
+            puzzle.playedMoveUci,
+            puzzle.bestMoveSan,
+            puzzle.bestMoveUci,
+            puzzle.lossCp,
+            puzzle.severity
+          )
         )
-      )
-    );
+      );
+    }
 
     return Response.json(
       { saved: uniquePuzzles.length, skipped: puzzles.length - uniquePuzzles.length },

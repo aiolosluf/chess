@@ -84,6 +84,7 @@ const COPY = {
     lichess: "Lichess 用户名",
     save: "保存",
     validate: "验证",
+    sync: "检查更新",
     importAnalyze: "导入并生成题目",
     stop: "停止",
     depth: "分析深度",
@@ -98,6 +99,9 @@ const COPY = {
     saved: "设置已保存",
     verified: "验证成功",
     importing: "正在抓取公开对局",
+    foundNew: "发现新棋局",
+    askGenerate: "是否现在生成题目？",
+    noNewGames: "没有发现新棋局",
     analyzing: "正在分析",
     done: "完成",
     noUsername: "请先填写用户名",
@@ -117,6 +121,7 @@ const COPY = {
     lichess: "Lichess username",
     save: "Save",
     validate: "Verify",
+    sync: "Check updates",
     importAnalyze: "Import and analyze",
     stop: "Stop",
     depth: "Depth",
@@ -131,6 +136,9 @@ const COPY = {
     saved: "Settings saved",
     verified: "Verified",
     importing: "Importing public games",
+    foundNew: "New games found",
+    askGenerate: "Generate puzzles now?",
+    noNewGames: "No new games found",
     analyzing: "Analyzing",
     done: "Done",
     noUsername: "Enter a username first",
@@ -454,34 +462,8 @@ export default function SettingsPage() {
     setIsBusy(true);
     setProgress({ games: 0, puzzles: 0 });
     try {
-      await saveSettings();
-      setMessage(`${platformLabel(platform)} ${copy.importing}`);
-      const importResponse = await fetch("/api/games/import", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ platform, username }),
-      });
-      if (!importResponse.ok) {
-        throw new Error(await readJsonError(importResponse));
-      }
-      const importResult = (await importResponse.json()) as {
-        username?: string;
-        saved?: number;
-        skipped?: number;
-        total?: number;
-      };
-      const canonicalUsername = importResult.username ?? username;
-      if (platform === "chesscom") {
-        setChessComUsername(canonicalUsername);
-        await saveSettings({ chessComUsername: canonicalUsername });
-      } else {
-        setLichessUsername(canonicalUsername);
-        await saveSettings({ lichessUsername: canonicalUsername });
-      }
-      setMessage(
-        `${platformLabel(platform)} ${copy.imported}: ${importResult.saved ?? 0}/${importResult.total ?? 0}`
-      );
-      await analyzePending(platform, canonicalUsername);
+      const importResult = await syncPlatformGames(platform, username);
+      await analyzePending(platform, importResult.username);
       await loadGameStats();
       setMessage(copy.done);
     } catch (error) {
@@ -489,6 +471,82 @@ export default function SettingsPage() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function syncOnly(platform: Platform) {
+    const username =
+      platform === "chesscom" ? chessComUsername.trim() : lichessUsername.trim();
+    if (!username) {
+      setMessage(copy.noUsername);
+      return;
+    }
+
+    cancelRef.current = false;
+    setIsBusy(true);
+    setProgress({ games: 0, puzzles: 0 });
+    try {
+      const importResult = await syncPlatformGames(platform, username);
+      await loadGameStats();
+
+      if (!importResult.saved) {
+        setMessage(`${platformLabel(platform)} ${copy.noNewGames}`);
+        return;
+      }
+
+      const shouldGenerate = window.confirm(
+        `${platformLabel(platform)} ${copy.foundNew}: ${importResult.saved}\n${copy.askGenerate}`
+      );
+      if (shouldGenerate) {
+        await analyzePending(platform, importResult.username);
+        await loadGameStats();
+        setMessage(copy.done);
+      } else {
+        setMessage(
+          `${platformLabel(platform)} ${copy.foundNew}: ${importResult.saved}`
+        );
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : copy.loadFailed);
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function syncPlatformGames(platform: Platform, username: string) {
+    await saveSettings();
+    setMessage(`${platformLabel(platform)} ${copy.importing}`);
+    const importResponse = await fetch("/api/games/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ platform, username }),
+    });
+    if (!importResponse.ok) {
+      throw new Error(await readJsonError(importResponse));
+    }
+    const importResult = (await importResponse.json()) as {
+      username?: string;
+      saved?: number;
+      skipped?: number;
+      total?: number;
+    };
+    const canonicalUsername = importResult.username ?? username;
+    if (platform === "chesscom") {
+      setChessComUsername(canonicalUsername);
+      await saveSettings({ chessComUsername: canonicalUsername });
+    } else {
+      setLichessUsername(canonicalUsername);
+      await saveSettings({ lichessUsername: canonicalUsername });
+    }
+    setMessage(
+      `${platformLabel(platform)} ${copy.imported}: ${importResult.saved ?? 0}/${importResult.total ?? 0}`
+    );
+
+    return {
+      username: canonicalUsername,
+      saved: Number(importResult.saved ?? 0),
+      skipped: Number(importResult.skipped ?? 0),
+      total: Number(importResult.total ?? 0),
+    };
   }
 
   async function analyzePending(platform: Platform, username: string) {
@@ -703,6 +761,7 @@ export default function SettingsPage() {
           copy={copy}
           onChange={setChessComUsername}
           onValidate={validate}
+          onSync={syncOnly}
           onImport={importAndAnalyze}
         />
         <AccountPanel
@@ -713,6 +772,7 @@ export default function SettingsPage() {
           copy={copy}
           onChange={setLichessUsername}
           onValidate={validate}
+          onSync={syncOnly}
           onImport={importAndAnalyze}
         />
       </section>
@@ -773,6 +833,7 @@ function AccountPanel({
   copy,
   onChange,
   onValidate,
+  onSync,
   onImport,
 }: {
   label: string;
@@ -782,6 +843,7 @@ function AccountPanel({
   copy: Record<string, string>;
   onChange: (value: string) => void;
   onValidate: (platform: Platform) => void;
+  onSync: (platform: Platform) => void;
   onImport: (platform: Platform) => void;
 }) {
   return (
@@ -809,6 +871,15 @@ function AccountPanel({
         >
           <CheckCircle2 size={16} aria-hidden="true" />
           {copy.validate}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => void onSync(platform)}
+          disabled={disabled}
+        >
+          <RefreshCw size={16} aria-hidden="true" />
+          {copy.sync}
         </button>
         <button
           type="button"

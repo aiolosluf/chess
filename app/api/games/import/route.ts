@@ -16,6 +16,16 @@ type ImportPayload = {
 const API_HEADERS = {
   "user-agent": "ChessMistakeTrainer/1.0",
 };
+const SQL_CHUNK_SIZE = 80;
+
+function chunks<T>(items: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+
+  return result;
+}
 
 async function fetchText(url: string) {
   const response = await fetch(url, { headers: API_HEADERS });
@@ -80,17 +90,20 @@ async function saveGames(
     return { saved: 0, skipped: 0 };
   }
 
-  const existing = await db
-    .prepare(
-      `SELECT game_key AS gameKey
-      FROM games
-      WHERE game_key IN (${games.map(() => "?").join(",")})`
-    )
-    .bind(...games.map((game) => game.gameKey))
-    .all();
-  const existingKeys = new Set(
-    (existing.results ?? []).map((row) => String(row.gameKey))
-  );
+  const existingKeys = new Set<string>();
+  for (const gameChunk of chunks(games, SQL_CHUNK_SIZE)) {
+    const existing = await db
+      .prepare(
+        `SELECT game_key AS gameKey
+        FROM games
+        WHERE game_key IN (${gameChunk.map(() => "?").join(",")})`
+      )
+      .bind(...gameChunk.map((game) => game.gameKey))
+      .all();
+    for (const row of existing.results ?? []) {
+      existingKeys.add(String(row.gameKey));
+    }
+  }
   const uniqueGames = games.filter(
     (game, index, all) =>
       !existingKeys.has(game.gameKey) &&
@@ -119,25 +132,27 @@ async function saveGames(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  await db.batch(
-    uniqueGames.map((game) =>
-      insert.bind(
-        platform,
-        username,
-        game.sourceUrl,
-        game.gameKey,
-        game.pgn,
-        JSON.stringify(game.headers),
-        game.gameTitle,
-        game.white,
-        game.black,
-        game.event,
-        game.playedAt,
-        game.userSide,
-        game.timeClass
+  for (const gameChunk of chunks(uniqueGames, SQL_CHUNK_SIZE)) {
+    await db.batch(
+      gameChunk.map((game) =>
+        insert.bind(
+          platform,
+          username,
+          game.sourceUrl,
+          game.gameKey,
+          game.pgn,
+          JSON.stringify(game.headers),
+          game.gameTitle,
+          game.white,
+          game.black,
+          game.event,
+          game.playedAt,
+          game.userSide,
+          game.timeClass
+        )
       )
-    )
-  );
+    );
+  }
 
   return { saved: uniqueGames.length, skipped: games.length - uniqueGames.length };
 }
