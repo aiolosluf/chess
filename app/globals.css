@@ -295,6 +295,21 @@ select {
   padding: 0 10px;
 }
 
+input {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--foreground);
+  height: 40px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+input:focus {
+  border-color: #8aae9a;
+  outline: 2px solid rgba(47, 111, 85, 0.16);
+}
+
 .segmented {
   background: #edf3ef;
   border-radius: 8px;
@@ -831,6 +846,82 @@ select {
   padding: 12px;
 }
 
+.settings-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(260px, 0.8fr) repeat(2, minmax(280px, 1fr));
+}
+
+.settings-panel {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+}
+
+.settings-notice {
+  margin-bottom: 0;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-grid label {
+  display: grid;
+  gap: 5px;
+}
+
+.settings-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-input {
+  width: 100%;
+}
+
+.compact-title {
+  margin-bottom: 0;
+}
+
+.stop-import-button {
+  margin-top: 12px;
+}
+
+.settings-games-panel {
+  margin-top: 12px;
+}
+
+.settings-game-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-game-row {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 92px minmax(160px, 1fr) repeat(3, minmax(78px, auto));
+  min-height: 44px;
+  padding: 8px 10px;
+}
+
+.settings-game-row strong,
+.settings-game-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-game-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .library-card-head {
   align-items: center;
   display: flex;
@@ -1133,6 +1224,10 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
   .analysis-layout {
     grid-template-columns: 1fr;
   }
@@ -1206,6 +1301,11 @@ select {
   }
 
   .library-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-game-row {
+    align-items: start;
     grid-template-columns: 1fr;
   }
 }

@@ -25,6 +25,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Settings,
   Shuffle,
   ClipboardPaste,
   Upload,
@@ -48,6 +49,9 @@ type AnalysisResult = {
   localId: string;
   dedupeKey: string;
   sourceName: string;
+  sourcePlatform: string;
+  sourceUsername: string;
+  sourceGameId: number | null;
   gamePgn: string;
   gameHeaders: string;
   gameTitle: string;
@@ -165,6 +169,7 @@ const COPY = {
     accuracy: "命中",
     averageLoss: "均损",
     library: "题库管理",
+    settings: "用户设置",
     reviewPage: "复盘上传",
     practicePage: "刷题",
     review: "复盘",
@@ -235,6 +240,7 @@ const COPY = {
     accuracy: "Accuracy",
     averageLoss: "Avg loss",
     library: "Library",
+    settings: "Settings",
     reviewPage: "Review upload",
     practicePage: "Practice",
     review: "Review",
@@ -1035,6 +1041,9 @@ export default function Home() {
             localId: `${Date.now()}-${index}-${bestMoveUci}`,
             dedupeKey: `${move.before}|${bestMoveUci}`,
             sourceName,
+            sourcePlatform: "pgn",
+            sourceUsername: "",
+            sourceGameId: null,
             gamePgn: selectedGame.pgn,
             gameHeaders: JSON.stringify(headers),
             gameTitle,
@@ -1297,6 +1306,10 @@ export default function Home() {
               <BookOpen size={16} aria-hidden="true" />
               {copy.library}
             </Link>
+            <Link className="secondary-button nav-button" href="/settings">
+              <Settings size={16} aria-hidden="true" />
+              {copy.settings}
+            </Link>
             <button
               type="button"
               className="icon-button language-button"
@@ -1331,6 +1344,10 @@ export default function Home() {
         <Link href="/library">
           <BookOpen size={16} aria-hidden="true" />
           {copy.library}
+        </Link>
+        <Link href="/settings">
+          <Settings size={16} aria-hidden="true" />
+          {copy.settings}
         </Link>
       </nav>
 

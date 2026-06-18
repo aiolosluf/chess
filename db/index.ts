@@ -29,6 +29,9 @@ async function ensurePuzzleSchema(db: D1Database) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       source_name TEXT NOT NULL,
+      source_platform TEXT NOT NULL DEFAULT 'pgn',
+      source_username TEXT NOT NULL DEFAULT '',
+      source_game_id INTEGER,
       dedupe_key TEXT NOT NULL DEFAULT '',
       game_pgn TEXT NOT NULL DEFAULT '',
       game_headers TEXT NOT NULL DEFAULT '',
@@ -63,6 +66,40 @@ async function ensurePuzzleSchema(db: D1Database) {
     db.prepare(
       "CREATE INDEX IF NOT EXISTS puzzles_dedupe_key_idx ON puzzles (dedupe_key)"
     ),
+    db.prepare(`CREATE TABLE IF NOT EXISTS games (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      source_platform TEXT NOT NULL,
+      source_username TEXT NOT NULL,
+      source_url TEXT NOT NULL DEFAULT '',
+      game_key TEXT NOT NULL,
+      pgn TEXT NOT NULL,
+      game_headers TEXT NOT NULL DEFAULT '',
+      game_title TEXT NOT NULL,
+      white TEXT NOT NULL,
+      black TEXT NOT NULL,
+      event TEXT NOT NULL,
+      played_at TEXT NOT NULL,
+      user_side TEXT NOT NULL,
+      time_class TEXT NOT NULL DEFAULT '',
+      puzzle_generated_at TEXT
+    )`),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS games_source_idx ON games (source_platform, source_username)"
+    ),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS games_game_key_idx ON games (game_key)"
+    ),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS games_puzzle_generated_idx ON games (puzzle_generated_at)"
+    ),
+    db.prepare(`CREATE TABLE IF NOT EXISTS user_settings (
+      id INTEGER PRIMARY KEY,
+      chesscom_username TEXT NOT NULL DEFAULT '',
+      lichess_username TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
   ]);
 
   const columns = await db.prepare("PRAGMA table_info(puzzles)").all();
@@ -101,11 +138,32 @@ async function ensurePuzzleSchema(db: D1Database) {
     );
   }
 
+  if (!columnNames.has("source_platform")) {
+    migrations.push(
+      db.prepare("ALTER TABLE puzzles ADD COLUMN source_platform TEXT NOT NULL DEFAULT 'pgn'")
+    );
+  }
+
+  if (!columnNames.has("source_username")) {
+    migrations.push(
+      db.prepare("ALTER TABLE puzzles ADD COLUMN source_username TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
+  if (!columnNames.has("source_game_id")) {
+    migrations.push(
+      db.prepare("ALTER TABLE puzzles ADD COLUMN source_game_id INTEGER")
+    );
+  }
+
   if (migrations.length) {
     await db.batch(migrations);
   }
 
   await db
     .prepare("CREATE INDEX IF NOT EXISTS puzzles_dedupe_key_idx ON puzzles (dedupe_key)")
+    .run();
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS puzzles_source_game_idx ON puzzles (source_game_id)")
     .run();
 }

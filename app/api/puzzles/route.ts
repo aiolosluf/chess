@@ -5,6 +5,9 @@ const PUZZLE_API_SCHEMA_VERSION = 3;
 type IncomingPuzzle = {
   dedupeKey?: string;
   sourceName?: string;
+  sourcePlatform?: string;
+  sourceUsername?: string;
+  sourceGameId?: number | null;
   gamePgn?: string;
   gameHeaders?: string;
   gameTitle?: string;
@@ -55,6 +58,15 @@ async function ensureExtendedPuzzleColumns(db: D1Database) {
   if (!names.has("previous_move_uci")) {
     migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN previous_move_uci TEXT NOT NULL DEFAULT ''"));
   }
+  if (!names.has("source_platform")) {
+    migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN source_platform TEXT NOT NULL DEFAULT 'pgn'"));
+  }
+  if (!names.has("source_username")) {
+    migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN source_username TEXT NOT NULL DEFAULT ''"));
+  }
+  if (!names.has("source_game_id")) {
+    migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN source_game_id INTEGER"));
+  }
 
   if (migrations.length) {
     await db.batch(migrations);
@@ -63,12 +75,21 @@ async function ensureExtendedPuzzleColumns(db: D1Database) {
   await db
     .prepare("CREATE INDEX IF NOT EXISTS puzzles_dedupe_key_idx ON puzzles (dedupe_key)")
     .run();
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS puzzles_source_game_idx ON puzzles (source_game_id)")
+    .run();
 }
 
 function normalizePuzzle(puzzle: IncomingPuzzle) {
   const normalized = {
     dedupeKey: cleanText(puzzle.dedupeKey),
     sourceName: cleanText(puzzle.sourceName, "PGN"),
+    sourcePlatform: cleanText(puzzle.sourcePlatform, "pgn").toLowerCase(),
+    sourceUsername: cleanText(puzzle.sourceUsername),
+    sourceGameId:
+      puzzle.sourceGameId === null || puzzle.sourceGameId === undefined
+        ? null
+        : Number(puzzle.sourceGameId),
     gamePgn: cleanText(puzzle.gamePgn),
     gameHeaders: cleanText(puzzle.gameHeaders),
     gameTitle: cleanText(puzzle.gameTitle, "棋局"),
@@ -119,6 +140,9 @@ export async function GET() {
           id,
           created_at AS createdAt,
           source_name AS sourceName,
+          source_platform AS sourcePlatform,
+          source_username AS sourceUsername,
+          source_game_id AS sourceGameId,
           dedupe_key AS dedupeKey,
           game_pgn AS gamePgn,
           game_headers AS gameHeaders,
@@ -206,6 +230,9 @@ export async function POST(request: Request) {
     const insert = db.prepare(
       `INSERT INTO puzzles (
         source_name,
+        source_platform,
+        source_username,
+        source_game_id,
         dedupe_key,
         game_pgn,
         game_headers,
@@ -227,13 +254,18 @@ export async function POST(request: Request) {
         best_move_uci,
         loss_cp,
         severity
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     await db.batch(
       uniquePuzzles.map((puzzle) =>
         insert.bind(
           puzzle.sourceName,
+          puzzle.sourcePlatform,
+          puzzle.sourceUsername,
+          Number.isFinite(puzzle.sourceGameId ?? Number.NaN)
+            ? puzzle.sourceGameId
+            : null,
           puzzle.dedupeKey,
           puzzle.gamePgn,
           puzzle.gameHeaders,

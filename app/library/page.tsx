@@ -8,6 +8,7 @@ import {
   Languages,
   Loader2,
   RefreshCw,
+  Settings,
   Trash2,
 } from "lucide-react";
 
@@ -18,6 +19,9 @@ type PuzzleRecord = {
   id: number;
   createdAt: string;
   sourceName: string;
+  sourcePlatform: string;
+  sourceUsername: string;
+  sourceGameId: number | null;
   gameTitle: string;
   white: string;
   black: string;
@@ -51,6 +55,7 @@ const COPY = {
     title: "题库管理",
     subtitle: "查看上传来源、日期、难度和练习记录；答案不在列表中显示。",
     back: "返回练习",
+    settings: "用户设置",
     refresh: "刷新",
     delete: "删除",
     total: "题目",
@@ -58,6 +63,7 @@ const COPY = {
     accuracy: "命中",
     averageLoss: "均损",
     source: "来源",
+    sourceAccount: "账号",
     uploaded: "上传日期",
     game: "棋局",
     side: "方",
@@ -76,6 +82,7 @@ const COPY = {
     title: "Puzzle Library",
     subtitle: "Manage source, upload date, difficulty, and practice records. Answers stay hidden here.",
     back: "Back to practice",
+    settings: "Settings",
     refresh: "Refresh",
     delete: "Delete",
     total: "Puzzles",
@@ -83,6 +90,7 @@ const COPY = {
     accuracy: "Accuracy",
     averageLoss: "Avg loss",
     source: "Source",
+    sourceAccount: "Account",
     uploaded: "Uploaded",
     game: "Game",
     side: "Side",
@@ -242,6 +250,10 @@ export default function LibraryPage() {
             <ArrowLeft size={16} aria-hidden="true" />
             {copy.back}
           </Link>
+          <Link className="secondary-button nav-button" href="/settings">
+            <Settings size={16} aria-hidden="true" />
+            {copy.settings}
+          </Link>
           <button
             type="button"
             className="icon-button language-button"
@@ -317,6 +329,10 @@ export default function LibraryPage() {
                 <div className="library-meta-grid">
                   <Meta label={copy.uploaded} value={formatDate(puzzle.createdAt, locale)} />
                   <Meta label={copy.source} value={puzzle.sourceName} />
+                  <Meta
+                    label={copy.sourceAccount}
+                    value={puzzle.sourceUsername || puzzle.sourcePlatform || "PGN"}
+                  />
                   <Meta label={copy.game} value={`${puzzle.white} - ${puzzle.black}`} />
                   <Meta label={copy.side} value={SIDE_LABELS[locale][puzzle.side]} />
                   <Meta label={copy.move} value={String(puzzle.moveNumber)} />
