@@ -987,7 +987,7 @@ select {
   border-radius: 8px;
   display: grid;
   gap: 8px;
-  grid-template-columns: 34px 1fr 74px;
+  grid-template-columns: 34px 1fr 98px;
   min-height: 40px;
   padding: 7px 9px;
 }
@@ -1068,7 +1068,19 @@ select {
   color: #d98a00;
 }
 
+.move-row button.branch-ply {
+  color: #24736a;
+}
+
+.move-row button.branch-ply::before {
+  content: "↳ ";
+}
+
 .move-row button.current.mistake-ply {
+  color: #202020;
+}
+
+.move-row button.current.branch-ply {
   color: #202020;
 }
 

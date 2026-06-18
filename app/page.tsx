@@ -92,6 +92,18 @@ type EngineLine = {
   multipv: number;
   bestMove: string;
   scoreCp: number;
+  depth?: number;
+};
+
+type AnalysisNode = {
+  fen: string;
+  san: string;
+  from: string;
+  to: string;
+  ply: number;
+  moveNumber: number;
+  color: "w" | "b";
+  isMainLine: boolean;
 };
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -435,11 +447,17 @@ class BrowserStockfish {
       }
 
       const multipv = Number(line.match(/\bmultipv (\d+)/)?.[1] ?? "1");
+      const infoDepth = Number(line.match(/\bdepth (\d+)/)?.[1] ?? "0");
       const parsed = parseScore(line);
       const pv = line.match(/\bpv\s+(.+)$/)?.[1]?.split(/\s+/)[0];
 
       if (parsed !== null && pv) {
-        lineMap.set(multipv, { multipv, bestMove: pv, scoreCp: parsed });
+        lineMap.set(multipv, {
+          multipv,
+          bestMove: pv,
+          scoreCp: parsed,
+          depth: infoDepth || undefined,
+        });
       }
     };
 
@@ -567,22 +585,63 @@ function evalPercent(cp: number) {
   return Math.round(50 + (clamped / 900) * 50);
 }
 
-function fenAtPly(pgn: string, ply: number, fallback: string) {
+function analysisNodesFromPgn(pgn: string, fallbackFen: string): AnalysisNode[] {
   if (!pgn) {
-    return fallback;
+    return [
+      {
+        fen: fallbackFen,
+        san: "",
+        from: "",
+        to: "",
+        ply: 0,
+        moveNumber: 0,
+        color: "w",
+        isMainLine: true,
+      },
+    ];
   }
 
   try {
     const game = new Chess();
     game.loadPgn(pgn, { strict: false });
     const history = game.history({ verbose: true });
-    if (ply <= 0) {
-      return history[0]?.before ?? fallback;
-    }
+    const startFen = history[0]?.before ?? fallbackFen;
 
-    return history[ply - 1]?.after ?? game.fen();
+    return [
+      {
+        fen: startFen,
+        san: "",
+        from: "",
+        to: "",
+        ply: 0,
+        moveNumber: 0,
+        color: "w",
+        isMainLine: true,
+      },
+      ...history.map((move, index) => ({
+        fen: move.after,
+        san: move.san,
+        from: move.from,
+        to: move.to,
+        ply: index + 1,
+        moveNumber: Math.floor(index / 2) + 1,
+        color: move.color,
+        isMainLine: true,
+      })),
+    ];
   } catch {
-    return fallback;
+    return [
+      {
+        fen: fallbackFen,
+        san: "",
+        from: "",
+        to: "",
+        ply: 0,
+        moveNumber: 0,
+        color: "w",
+        isMainLine: true,
+      },
+    ];
   }
 }
 
@@ -1700,13 +1759,23 @@ function AnalysisPanel({
   copy: Record<string, string>;
   onClose: () => void;
 }) {
-  const [fen, setFen] = useState(puzzle.fenBefore);
-  const [currentPly, setCurrentPly] = useState(puzzle.ply);
+  const initialNodes = useMemo(
+    () => analysisNodesFromPgn(puzzle.gamePgn, puzzle.fenBefore),
+    [puzzle.fenBefore, puzzle.gamePgn]
+  );
+  const initialIndex = Math.min(
+    Math.max(puzzle.ply - 1, 0),
+    Math.max(0, initialNodes.length - 1)
+  );
+  const [nodes, setNodes] = useState<AnalysisNode[]>(initialNodes);
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [engineLines, setEngineLines] = useState<EngineLine[]>([]);
   const [scoreCp, setScoreCp] = useState(0);
+  const [searchDepth, setSearchDepth] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const engineRef = useRef<BrowserStockfish | null>(null);
+  const fen = nodes[currentIndex]?.fen ?? puzzle.fenBefore;
 
   const chess = useMemo(() => {
     try {
@@ -1715,6 +1784,12 @@ function AnalysisPanel({
       return new Chess();
     }
   }, [fen]);
+  const previousMoveHighlight = nodes[currentIndex]?.from
+    ? {
+        from: nodes[currentIndex].from,
+        to: nodes[currentIndex].to,
+      }
+    : null;
 
   const legalTargets = useMemo(() => {
     if (!selectedSquare) {
@@ -1732,51 +1807,60 @@ function AnalysisPanel({
     }
   }, [chess, selectedSquare]);
 
-  const moveList = useMemo(() => {
-    if (!puzzle.gamePgn) {
-      return [];
-    }
-
-    try {
-      const game = new Chess();
-      game.loadPgn(puzzle.gamePgn, { strict: false });
-      return game.history();
-    } catch {
-      return [];
-    }
-  }, [puzzle.gamePgn]);
-
   const moveRows = useMemo(() => {
-    const rows: { moveNumber: number; white?: string; black?: string; whitePly?: number; blackPly?: number }[] = [];
-    for (let index = 0; index < moveList.length; index += 2) {
-      rows.push({
-        moveNumber: Math.floor(index / 2) + 1,
-        white: moveList[index],
-        black: moveList[index + 1],
-        whitePly: index + 1,
-        blackPly: moveList[index + 1] ? index + 2 : undefined,
-      });
-    }
-    return rows;
-  }, [moveList]);
+    const rows: {
+      moveNumber: number;
+      white?: AnalysisNode;
+      black?: AnalysisNode;
+    }[] = [];
 
-  const maxPly = moveList.length;
+    for (const node of nodes.slice(1)) {
+      let row = rows.find((item) => item.moveNumber === node.moveNumber);
+      if (!row) {
+        row = { moveNumber: node.moveNumber };
+        rows.push(row);
+      }
+
+      if (node.color === "w") {
+        row.white = node;
+      } else {
+        row.black = node;
+      }
+    }
+
+    return rows;
+  }, [nodes]);
+
+  const maxIndex = nodes.length - 1;
 
   useEffect(() => {
     let cancelled = false;
 
     async function analyze() {
       setIsAnalyzing(true);
+      setSearchDepth(0);
+      setEngineLines([]);
+      setScoreCp(0);
       try {
         engineRef.current ??= new BrowserStockfish();
-        const result = await engineRef.current.analyzeFenLines(fen, 10, 3);
-        if (!cancelled) {
-          setEngineLines(result.lines);
+        for (const depth of [6, 8, 10, 12, 14]) {
+          const result = await engineRef.current.analyzeFenLines(fen, depth, 3);
+          if (cancelled) {
+            return;
+          }
+          setSearchDepth(depth);
+          setEngineLines(
+            result.lines.map((line) => ({
+              ...line,
+              depth: line.depth ?? depth,
+            }))
+          );
           setScoreCp(result.scoreCp);
         }
       } catch {
         if (!cancelled) {
           setEngineLines([]);
+          setSearchDepth(0);
         }
       } finally {
         if (!cancelled) {
@@ -1824,42 +1908,52 @@ function AnalysisPanel({
   function makeMove(from: string, to: string) {
     try {
       const next = new Chess(fen);
-      next.move({ from, to, promotion: "q" });
-      setFen(next.fen());
-      setCurrentPly(0);
+      const move = next.move({ from, to, promotion: "q" });
+      const nextNode: AnalysisNode = {
+        fen: next.fen(),
+        san: move.san,
+        from: move.from,
+        to: move.to,
+        ply: currentIndex + 1,
+        moveNumber: Math.floor(currentIndex / 2) + 1,
+        color: move.color,
+        isMainLine: false,
+      };
+      const nextNodes = [...nodes.slice(0, currentIndex + 1), nextNode];
+      setNodes(nextNodes);
+      setCurrentIndex(nextNodes.length - 1);
       setSelectedSquare(null);
     } catch {
       setSelectedSquare(null);
     }
   }
 
-  const goToPly = useCallback((ply: number) => {
-    const nextPly = Math.max(0, Math.min(maxPly, ply));
-    setCurrentPly(nextPly);
-    setFen(fenAtPly(puzzle.gamePgn, nextPly, puzzle.fenBefore));
+  const goToIndex = useCallback((index: number) => {
+    const nextIndex = Math.max(0, Math.min(maxIndex, index));
+    setCurrentIndex(nextIndex);
     setSelectedSquare(null);
-  }, [maxPly, puzzle.fenBefore, puzzle.gamePgn]);
+  }, [maxIndex]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        goToPly(currentPly - 1);
+        goToIndex(currentIndex - 1);
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        goToPly(currentPly + 1);
+        goToIndex(currentIndex + 1);
       } else if (event.key === "ArrowUp") {
         event.preventDefault();
-        goToPly(0);
+        goToIndex(0);
       } else if (event.key === "ArrowDown") {
         event.preventDefault();
-        goToPly(maxPly);
+        goToIndex(maxIndex);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentPly, goToPly, maxPly]);
+  }, [currentIndex, goToIndex, maxIndex]);
 
   return (
     <div className="analysis-overlay" role="dialog" aria-modal="true">
@@ -1890,7 +1984,7 @@ function AnalysisPanel({
                 legalTargets={legalTargets}
                 answerHighlight={null}
                 mistakeHighlight={null}
-                previousMoveHighlight={null}
+                previousMoveHighlight={previousMoveHighlight}
                 onSquareClick={selectOrMove}
                 onMove={makeMove}
               />
@@ -1903,6 +1997,7 @@ function AnalysisPanel({
               <div className="result-head">
                 <strong>{copy.engineLines}</strong>
                 {isAnalyzing ? <Loader2 className="spin" size={16} aria-hidden="true" /> : null}
+                {searchDepth ? <span>d{searchDepth}</span> : null}
               </div>
               <div className="engine-lines">
                 {engineLines.length ? (
@@ -1910,7 +2005,7 @@ function AnalysisPanel({
                     <div key={`${line.multipv}-${line.bestMove}`}>
                       <span>#{line.multipv}</span>
                       <strong>{uciToSan(fen, line.bestMove)}</strong>
-                      <small>{signedScoreLabel(line.scoreCp)}</small>
+                      <small>{signedScoreLabel(line.scoreCp)} · d{line.depth ?? searchDepth}</small>
                     </div>
                   ))
                 ) : (
@@ -1922,13 +2017,13 @@ function AnalysisPanel({
             <div className="analysis-box">
               <div className="result-head">
                 <strong>{copy.gameRecord}</strong>
-                <span>{currentPly}/{maxPly}</span>
+                <span>{currentIndex}/{maxIndex}</span>
               </div>
               <div className="move-nav-buttons" aria-label="move navigation">
-                <button type="button" onClick={() => goToPly(0)}>{"<<"}</button>
-                <button type="button" onClick={() => goToPly(currentPly - 1)}>{"<"}</button>
-                <button type="button" onClick={() => goToPly(currentPly + 1)}>{">"}</button>
-                <button type="button" onClick={() => goToPly(maxPly)}>{">>"}</button>
+                <button type="button" onClick={() => goToIndex(0)}>{"<<"}</button>
+                <button type="button" onClick={() => goToIndex(currentIndex - 1)}>{"<"}</button>
+                <button type="button" onClick={() => goToIndex(currentIndex + 1)}>{">"}</button>
+                <button type="button" onClick={() => goToIndex(maxIndex)}>{">>"}</button>
               </div>
               <div className="move-table">
                 {moveRows.length ? (
@@ -1938,27 +2033,29 @@ function AnalysisPanel({
                       <button
                         type="button"
                         className={[
-                          row.whitePly === currentPly ? "current" : "",
-                          row.whitePly === puzzle.ply ? "mistake-ply" : "",
+                          row.white && nodes.indexOf(row.white) === currentIndex ? "current" : "",
+                          row.white?.ply === puzzle.ply && row.white.isMainLine ? "mistake-ply" : "",
+                          row.white && !row.white.isMainLine ? "branch-ply" : "",
                         ]
                           .filter(Boolean)
                           .join(" ")}
-                        onClick={() => row.whitePly && goToPly(row.whitePly)}
+                        onClick={() => row.white && goToIndex(nodes.indexOf(row.white))}
                       >
-                        {row.white}
+                        {row.white?.san ?? ""}
                       </button>
                       <button
                         type="button"
                         className={[
-                          row.blackPly === currentPly ? "current" : "",
-                          row.blackPly === puzzle.ply ? "mistake-ply" : "",
+                          row.black && nodes.indexOf(row.black) === currentIndex ? "current" : "",
+                          row.black?.ply === puzzle.ply && row.black.isMainLine ? "mistake-ply" : "",
+                          row.black && !row.black.isMainLine ? "branch-ply" : "",
                         ]
                           .filter(Boolean)
                           .join(" ")}
-                        onClick={() => row.blackPly && goToPly(row.blackPly)}
+                        onClick={() => row.black && goToIndex(nodes.indexOf(row.black))}
                         disabled={!row.black}
                       >
-                        {row.black ?? ""}
+                        {row.black?.san ?? ""}
                       </button>
                     </div>
                   ))
