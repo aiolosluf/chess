@@ -29,6 +29,13 @@ export async function POST(request: Request) {
       )
       .bind(payload.correct ? 1 : 0, id)
       .run();
+    await db
+      .prepare(
+        `INSERT INTO practice_events (puzzle_id, correct)
+        VALUES (?, ?)`
+      )
+      .bind(id, payload.correct ? 1 : 0)
+      .run();
 
     const puzzle = await db
       .prepare(
@@ -47,6 +54,7 @@ export async function POST(request: Request) {
           black,
           event,
           played_at AS playedAt,
+          time_class AS timeClass,
           move_number AS moveNumber,
           ply,
           side,

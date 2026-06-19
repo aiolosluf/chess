@@ -16,6 +16,7 @@ type IncomingPuzzle = {
   black?: string;
   event?: string;
   playedAt?: string;
+  timeClass?: string;
   moveNumber?: number;
   ply?: number;
   side?: string;
@@ -107,6 +108,7 @@ function normalizePuzzle(puzzle: IncomingPuzzle) {
     black: cleanText(puzzle.black, "Black"),
     event: cleanText(puzzle.event, "Training"),
     playedAt: cleanText(puzzle.playedAt, ""),
+    timeClass: cleanText(puzzle.timeClass),
     moveNumber: Number(puzzle.moveNumber),
     ply: Number(puzzle.ply),
     side: cleanText(puzzle.side),
@@ -139,11 +141,74 @@ function normalizePuzzle(puzzle: IncomingPuzzle) {
   return normalized;
 }
 
-export async function GET() {
+function dateCutoff(range: string | null) {
+  if (!range || range === "all") {
+    return "";
+  }
+
+  const date = new Date();
+  if (range === "1y") {
+    date.setFullYear(date.getFullYear() - 1);
+  } else if (range === "6m") {
+    date.setMonth(date.getMonth() - 6);
+  } else if (range === "3m") {
+    date.setMonth(date.getMonth() - 3);
+  } else if (range === "30d") {
+    date.setDate(date.getDate() - 30);
+  } else {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10).replace(/-/g, ".");
+}
+
+function buildPuzzleFilters(request: Request) {
+  const params = new URL(request.url).searchParams;
+  const filters = [];
+  const values: string[] = [];
+  const sourcePlatform = params.get("sourcePlatform") ?? "";
+  const sourceUsername = params.get("sourceUsername") ?? "";
+  const timeClass = params.get("timeClass") ?? "";
+  const from = params.get("from") || dateCutoff(params.get("range"));
+  const to = params.get("to") ?? "";
+
+  if (sourcePlatform && sourcePlatform !== "all") {
+    filters.push("source_platform = ?");
+    values.push(sourcePlatform);
+  }
+
+  if (sourceUsername) {
+    filters.push("lower(source_username) = lower(?)");
+    values.push(sourceUsername);
+  }
+
+  if (timeClass && timeClass !== "all") {
+    filters.push("time_class = ?");
+    values.push(timeClass);
+  }
+
+  if (from) {
+    filters.push("replace(played_at, '.', '-') >= replace(?, '.', '-')");
+    values.push(from);
+  }
+
+  if (to) {
+    filters.push("replace(played_at, '.', '-') <= replace(?, '.', '-')");
+    values.push(to);
+  }
+
+  return {
+    where: filters.length ? `WHERE ${filters.join(" AND ")}` : "",
+    values,
+  };
+}
+
+export async function GET(request: Request) {
   try {
     void PUZZLE_API_SCHEMA_VERSION;
     const db = await getPuzzleD1();
     await ensureExtendedPuzzleColumns(db);
+    const { where, values } = buildPuzzleFilters(request);
     const puzzles = await db
       .prepare(
         `SELECT
@@ -161,6 +226,7 @@ export async function GET() {
           black,
           event,
           played_at AS playedAt,
+          time_class AS timeClass,
           move_number AS moveNumber,
           ply,
           side,
@@ -178,9 +244,11 @@ export async function GET() {
           solves,
           last_practiced_at AS lastPracticedAt
         FROM puzzles
+        ${where}
         ORDER BY datetime(created_at) DESC, id DESC
         LIMIT 100`
       )
+      .bind(...values)
       .all();
 
     const stats = await db
@@ -190,13 +258,30 @@ export async function GET() {
           COALESCE(SUM(attempts), 0) AS attempts,
           COALESCE(SUM(solves), 0) AS solves,
           COALESCE(ROUND(AVG(loss_cp)), 0) AS averageLoss
-        FROM puzzles`
+        FROM puzzles
+        ${where}`
+      )
+      .bind(...values)
+      .first();
+    const practiceStats = await db
+      .prepare(
+        `SELECT
+          COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN 1 ELSE 0 END), 0) AS todayAttempts,
+          COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN correct ELSE 0 END), 0) AS todaySolves,
+          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-7 days') THEN 1 ELSE 0 END), 0) AS weekAttempts,
+          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-7 days') THEN correct ELSE 0 END), 0) AS weekSolves,
+          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS monthAttempts,
+          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-30 days') THEN correct ELSE 0 END), 0) AS monthSolves
+        FROM practice_events`
       )
       .first();
 
     return Response.json({
       puzzles: puzzles.results ?? [],
-      stats: stats ?? { total: 0, attempts: 0, solves: 0, averageLoss: 0 },
+      stats: {
+        ...(stats ?? { total: 0, attempts: 0, solves: 0, averageLoss: 0 }),
+        ...(practiceStats ?? {}),
+      },
     });
   } catch (error) {
     return Response.json({ error: toRouteErrorMessage(error) }, { status: 500 });
@@ -254,6 +339,7 @@ export async function POST(request: Request) {
         black,
         event,
         played_at,
+        time_class,
         move_number,
         ply,
         side,
@@ -267,7 +353,7 @@ export async function POST(request: Request) {
         best_move_uci,
         loss_cp,
         severity
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     for (const puzzleChunk of chunks(uniquePuzzles, SQL_CHUNK_SIZE)) {
@@ -288,6 +374,7 @@ export async function POST(request: Request) {
             puzzle.black,
             puzzle.event,
             puzzle.playedAt,
+            puzzle.timeClass,
             puzzle.moveNumber,
             puzzle.ply,
             puzzle.side,
@@ -310,6 +397,31 @@ export async function POST(request: Request) {
       { saved: uniquePuzzles.length, skipped: puzzles.length - uniquePuzzles.length },
       { status: 201 }
     );
+  } catch (error) {
+    return Response.json({ error: toRouteErrorMessage(error) }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const payload = (await request.json()) as { ids?: number[] };
+    const ids = Array.isArray(payload.ids)
+      ? payload.ids.map(Number).filter(Number.isFinite)
+      : [];
+
+    if (!ids.length) {
+      return Response.json({ deleted: 0 });
+    }
+
+    const db = await getPuzzleD1();
+    for (const idChunk of chunks(ids, SQL_CHUNK_SIZE)) {
+      await db
+        .prepare(`DELETE FROM puzzles WHERE id IN (${idChunk.map(() => "?").join(",")})`)
+        .bind(...idChunk)
+        .run();
+    }
+
+    return Response.json({ deleted: ids.length });
   } catch (error) {
     return Response.json({ error: toRouteErrorMessage(error) }, { status: 500 });
   }

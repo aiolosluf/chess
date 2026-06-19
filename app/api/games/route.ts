@@ -55,13 +55,26 @@ export async function GET(request: Request) {
       .bind(...values, limit)
       .all();
 
+    const statsFilters = filters.filter((filter) => filter !== "puzzle_generated_at IS NULL");
+    const filteredStatsValues: (string | number)[] = [];
+    if (platform) {
+      filteredStatsValues.push(platform);
+    }
+    if (username) {
+      filteredStatsValues.push(username);
+    }
+    const statsWhere = statsFilters.length
+      ? `WHERE ${statsFilters.join(" AND ")}`
+      : "";
     const stats = await db
       .prepare(
         `SELECT
           COUNT(*) AS total,
           COALESCE(SUM(CASE WHEN puzzle_generated_at IS NULL THEN 1 ELSE 0 END), 0) AS pending
         FROM games`
+        + ` ${statsWhere}`
       )
+      .bind(...filteredStatsValues)
       .first();
 
     return Response.json({

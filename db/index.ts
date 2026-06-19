@@ -40,6 +40,7 @@ async function ensurePuzzleSchema(db: D1Database) {
       black TEXT NOT NULL,
       event TEXT NOT NULL,
       played_at TEXT NOT NULL,
+      time_class TEXT NOT NULL DEFAULT '',
       move_number INTEGER NOT NULL,
       ply INTEGER NOT NULL,
       side TEXT NOT NULL,
@@ -98,8 +99,19 @@ async function ensurePuzzleSchema(db: D1Database) {
       id INTEGER PRIMARY KEY,
       chesscom_username TEXT NOT NULL DEFAULT '',
       lichess_username TEXT NOT NULL DEFAULT '',
+      fide_id TEXT NOT NULL DEFAULT '',
+      fide_name TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS practice_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      puzzle_id INTEGER NOT NULL,
+      correct INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    db.prepare(
+      "CREATE INDEX IF NOT EXISTS practice_events_created_idx ON practice_events (created_at)"
+    ),
   ]);
 
   const columns = await db.prepare("PRAGMA table_info(puzzles)").all();
@@ -156,6 +168,12 @@ async function ensurePuzzleSchema(db: D1Database) {
     );
   }
 
+  if (!columnNames.has("time_class")) {
+    migrations.push(
+      db.prepare("ALTER TABLE puzzles ADD COLUMN time_class TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
   if (migrations.length) {
     await db.batch(migrations);
   }
@@ -166,4 +184,32 @@ async function ensurePuzzleSchema(db: D1Database) {
   await db
     .prepare("CREATE INDEX IF NOT EXISTS puzzles_source_game_idx ON puzzles (source_game_id)")
     .run();
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS puzzles_played_at_idx ON puzzles (played_at)")
+    .run();
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS puzzles_time_class_idx ON puzzles (time_class)")
+    .run();
+
+  const settingsColumns = await db.prepare("PRAGMA table_info(user_settings)").all();
+  const settingsNames = new Set(
+    (settingsColumns.results ?? []).map((column) => String(column.name))
+  );
+  const settingsMigrations = [];
+
+  if (!settingsNames.has("fide_id")) {
+    settingsMigrations.push(
+      db.prepare("ALTER TABLE user_settings ADD COLUMN fide_id TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
+  if (!settingsNames.has("fide_name")) {
+    settingsMigrations.push(
+      db.prepare("ALTER TABLE user_settings ADD COLUMN fide_name TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
+  if (settingsMigrations.length) {
+    await db.batch(settingsMigrations);
+  }
 }

@@ -16,7 +16,7 @@ import { Chess, type Move } from "chess.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Locale = "zh" | "en";
-type Platform = "chesscom" | "lichess";
+type Platform = "chesscom" | "lichess" | "fide";
 type Severity = "inaccuracy" | "mistake" | "blunder";
 
 type ImportedGame = {
@@ -31,6 +31,7 @@ type ImportedGame = {
   black: string;
   event: string;
   playedAt: string;
+  timeClass: string;
   userSide: "w" | "b";
   puzzleGeneratedAt: string | null;
 };
@@ -59,6 +60,7 @@ type PuzzleCandidate = {
   black: string;
   event: string;
   playedAt: string;
+  timeClass: string;
   moveNumber: number;
   ply: number;
   side: "w" | "b";
@@ -101,7 +103,12 @@ const COPY = {
     importing: "正在抓取公开对局",
     foundNew: "发现新棋局",
     askGenerate: "是否现在生成题目？",
-    noNewGames: "没有发现新棋局",
+  noNewGames: "没有发现新棋局",
+    unbind: "解绑",
+    bound: "已绑定",
+    keepData: "解绑后保留已有棋局和题库吗？确定=保留，取消=删除",
+    fide: "FIDE ID",
+    fideNoAuto: "FIDE 可验证身份；公开对局没有稳定按 ID 查询的官方接口，请用复盘上传导入 PGN。",
     analyzing: "正在分析",
     done: "完成",
     noUsername: "请先填写用户名",
@@ -139,6 +146,11 @@ const COPY = {
     foundNew: "New games found",
     askGenerate: "Generate puzzles now?",
     noNewGames: "No new games found",
+    unbind: "Unbind",
+    bound: "Bound",
+    keepData: "Keep existing games and puzzles after unbinding? OK=keep, Cancel=delete",
+    fide: "FIDE ID",
+    fideNoAuto: "FIDE identity can be verified; there is no stable official public games API by ID. Import PGN from Review upload.",
     analyzing: "Analyzing",
     done: "Done",
     noUsername: "Enter a username first",
@@ -329,20 +341,36 @@ async function readJsonError(response: Response) {
 }
 
 function platformLabel(platform: Platform) {
-  return platform === "chesscom" ? "Chess.com" : "Lichess";
+  if (platform === "chesscom") {
+    return "Chess.com";
+  }
+  if (platform === "lichess") {
+    return "Lichess";
+  }
+  return "FIDE";
 }
 
 export default function SettingsPage() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [chessComUsername, setChessComUsername] = useState("");
   const [lichessUsername, setLichessUsername] = useState("");
+  const [fideId, setFideId] = useState("");
+  const [fideName, setFideName] = useState("");
   const [depth, setDepth] = useState(8);
-  const [batchSize, setBatchSize] = useState(12);
+  const batchSize = 12;
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState(COPY.zh.ready);
-  const [stats, setStats] = useState({ total: 0, pending: 0 });
+  const [stats, setStats] = useState({
+    chesscom: { total: 0, pending: 0 },
+    lichess: { total: 0, pending: 0 },
+    fide: { total: 0, pending: 0 },
+  });
   const [recentGames, setRecentGames] = useState<ImportedGame[]>([]);
-  const [progress, setProgress] = useState({ games: 0, puzzles: 0 });
+  const [progress, setProgress] = useState({
+    chesscom: { games: 0, puzzles: 0 },
+    lichess: { games: 0, puzzles: 0 },
+    fide: { games: 0, puzzles: 0 },
+  });
   const engineRef = useRef<BrowserStockfish | null>(null);
   const cancelRef = useRef(false);
   const copy = COPY[locale];
@@ -357,29 +385,50 @@ export default function SettingsPage() {
         settings?: {
           chessComUsername?: string;
           lichessUsername?: string;
+          fideId?: string;
+          fideName?: string;
         };
       };
       setChessComUsername(payload.settings?.chessComUsername ?? "");
       setLichessUsername(payload.settings?.lichessUsername ?? "");
+      setFideId(payload.settings?.fideId ?? "");
+      setFideName(payload.settings?.fideName ?? "");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.loadFailed);
     }
   }, [copy.loadFailed]);
 
   const loadGameStats = useCallback(async () => {
-    const response = await fetch("/api/games?limit=1");
-    if (!response.ok) {
-      return;
-    }
-    const payload = (await response.json()) as {
-      stats?: { total?: number; pending?: number };
-      games?: ImportedGame[];
+    const platforms: Platform[] = ["chesscom", "lichess", "fide"];
+    const nextStats = {
+      chesscom: { total: 0, pending: 0 },
+      lichess: { total: 0, pending: 0 },
+      fide: { total: 0, pending: 0 },
     };
-    setStats({
-      total: Number(payload.stats?.total ?? 0),
-      pending: Number(payload.stats?.pending ?? 0),
-    });
-    setRecentGames(payload.games ?? []);
+    let latestGames: ImportedGame[] = [];
+
+    for (const platform of platforms) {
+      const response = await fetch(`/api/games?limit=20&platform=${platform}`);
+      if (!response.ok) {
+        continue;
+      }
+      const payload = (await response.json()) as {
+        stats?: { total?: number; pending?: number };
+        games?: ImportedGame[];
+      };
+      nextStats[platform] = {
+        total: Number(payload.stats?.total ?? 0),
+        pending: Number(payload.stats?.pending ?? 0),
+      };
+      latestGames = [...latestGames, ...(payload.games ?? [])];
+    }
+
+    setStats(nextStats);
+    setRecentGames(
+      latestGames
+        .sort((a, b) => String(b.playedAt).localeCompare(String(a.playedAt)))
+        .slice(0, 20)
+    );
   }, []);
 
   useEffect(() => {
@@ -397,16 +446,22 @@ export default function SettingsPage() {
   async function saveSettings(next?: {
     chessComUsername?: string;
     lichessUsername?: string;
+    fideId?: string;
+    fideName?: string;
   }) {
     setMessage("");
     const nextChessComUsername = next?.chessComUsername ?? chessComUsername;
     const nextLichessUsername = next?.lichessUsername ?? lichessUsername;
+    const nextFideId = next?.fideId ?? fideId;
+    const nextFideName = next?.fideName ?? fideName;
     const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chessComUsername: nextChessComUsername,
         lichessUsername: nextLichessUsername,
+        fideId: nextFideId,
+        fideName: nextFideName,
       }),
     });
     if (!response.ok) {
@@ -417,7 +472,11 @@ export default function SettingsPage() {
 
   async function validate(platform: Platform) {
     const username =
-      platform === "chesscom" ? chessComUsername.trim() : lichessUsername.trim();
+      platform === "chesscom"
+        ? chessComUsername.trim()
+        : platform === "lichess"
+        ? lichessUsername.trim()
+        : fideId.trim();
     if (!username) {
       setMessage(copy.noUsername);
       return;
@@ -434,13 +493,23 @@ export default function SettingsPage() {
       if (!response.ok) {
         throw new Error(await readJsonError(response));
       }
-      const payload = (await response.json()) as { username?: string };
+      const payload = (await response.json()) as {
+        username?: string;
+        displayName?: string;
+      };
       if (platform === "chesscom") {
         setChessComUsername(payload.username ?? username);
         await saveSettings({ chessComUsername: payload.username ?? username });
-      } else {
+      } else if (platform === "lichess") {
         setLichessUsername(payload.username ?? username);
         await saveSettings({ lichessUsername: payload.username ?? username });
+      } else {
+        setFideId(payload.username ?? username);
+        setFideName(payload.displayName ?? "");
+        await saveSettings({
+          fideId: payload.username ?? username,
+          fideName: payload.displayName ?? "",
+        });
       }
       setMessage(`${platformLabel(platform)} ${copy.verified}`);
     } catch (error) {
@@ -451,6 +520,11 @@ export default function SettingsPage() {
   }
 
   async function importAndAnalyze(platform: Platform) {
+    if (platform === "fide") {
+      setMessage(copy.fideNoAuto);
+      return;
+    }
+
     const username =
       platform === "chesscom" ? chessComUsername.trim() : lichessUsername.trim();
     if (!username) {
@@ -460,7 +534,10 @@ export default function SettingsPage() {
 
     cancelRef.current = false;
     setIsBusy(true);
-    setProgress({ games: 0, puzzles: 0 });
+    setProgress((current) => ({
+      ...current,
+      [platform]: { games: 0, puzzles: 0 },
+    }));
     try {
       const importResult = await syncPlatformGames(platform, username);
       await analyzePending(platform, importResult.username);
@@ -474,6 +551,11 @@ export default function SettingsPage() {
   }
 
   async function syncOnly(platform: Platform) {
+    if (platform === "fide") {
+      setMessage(copy.fideNoAuto);
+      return;
+    }
+
     const username =
       platform === "chesscom" ? chessComUsername.trim() : lichessUsername.trim();
     if (!username) {
@@ -483,7 +565,10 @@ export default function SettingsPage() {
 
     cancelRef.current = false;
     setIsBusy(true);
-    setProgress({ games: 0, puzzles: 0 });
+    setProgress((current) => ({
+      ...current,
+      [platform]: { games: 0, puzzles: 0 },
+    }));
     try {
       const importResult = await syncPlatformGames(platform, username);
       await loadGameStats();
@@ -587,11 +672,20 @@ export default function SettingsPage() {
           }
           const saved = (await saveResponse.json()) as { saved?: number };
           setProgress((current) => ({
-            games: current.games + 1,
-            puzzles: current.puzzles + Number(saved.saved ?? 0),
+            ...current,
+            [platform]: {
+              games: current[platform].games + 1,
+              puzzles: current[platform].puzzles + Number(saved.saved ?? 0),
+            },
           }));
         } else {
-          setProgress((current) => ({ ...current, games: current.games + 1 }));
+          setProgress((current) => ({
+            ...current,
+            [platform]: {
+              ...current[platform],
+              games: current[platform].games + 1,
+            },
+          }));
         }
 
         await fetch("/api/games/mark-analysed", {
@@ -652,6 +746,7 @@ export default function SettingsPage() {
         black: game.black,
         event: game.event,
         playedAt: game.playedAt,
+        timeClass: game.timeClass,
         moveNumber: Math.floor(index / 2) + 1,
         ply: index + 1,
         side: move.color,
@@ -671,6 +766,51 @@ export default function SettingsPage() {
     }
 
     return candidates;
+  }
+
+  async function unbindAccount(platform: Platform) {
+    const username =
+      platform === "chesscom"
+        ? chessComUsername
+        : platform === "lichess"
+        ? lichessUsername
+        : fideId;
+    if (!username) {
+      return;
+    }
+
+    const keepData = window.confirm(copy.keepData);
+    setIsBusy(true);
+    try {
+      const response = await fetch("/api/settings/account", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          platform,
+          username,
+          deleteData: !keepData,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readJsonError(response));
+      }
+
+      if (platform === "chesscom") {
+        setChessComUsername("");
+      } else if (platform === "lichess") {
+        setLichessUsername("");
+      } else {
+        setFideId("");
+        setFideName("");
+      }
+      await loadSettings();
+      await loadGameStats();
+      setMessage(copy.done);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : copy.loadFailed);
+    } finally {
+      setIsBusy(false);
+    }
   }
 
   return (
@@ -702,13 +842,6 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <section className="library-summary" aria-label="import stats">
-        <Stat label={copy.totalGames} value={stats.total} />
-        <Stat label={copy.pendingGames} value={stats.pending} />
-        <Stat label={copy.imported} value={progress.games} />
-        <Stat label={copy.puzzles} value={progress.puzzles} />
-      </section>
-
       <section className="settings-layout">
         <div className="panel settings-panel">
           <div className="result-head">
@@ -722,23 +855,16 @@ export default function SettingsPage() {
           <div className="settings-grid">
             <label>
               <span>{copy.depth}</span>
-              <input
-                min={6}
-                max={14}
-                type="number"
+              <select
                 value={depth}
                 onChange={(event) => setDepth(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              <span>{copy.batch}</span>
-              <input
-                min={1}
-                max={50}
-                type="number"
-                value={batchSize}
-                onChange={(event) => setBatchSize(Number(event.target.value))}
-              />
+              >
+                {[8, 10, 12, 14].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 
@@ -757,23 +883,46 @@ export default function SettingsPage() {
           label={copy.chesscom}
           platform="chesscom"
           value={chessComUsername}
+          displayName={chessComUsername}
+          stats={stats.chesscom}
+          progress={progress.chesscom}
           disabled={isBusy}
           copy={copy}
           onChange={setChessComUsername}
           onValidate={validate}
           onSync={syncOnly}
           onImport={importAndAnalyze}
+          onUnbind={unbindAccount}
         />
         <AccountPanel
           label={copy.lichess}
           platform="lichess"
           value={lichessUsername}
+          displayName={lichessUsername}
+          stats={stats.lichess}
+          progress={progress.lichess}
           disabled={isBusy}
           copy={copy}
           onChange={setLichessUsername}
           onValidate={validate}
           onSync={syncOnly}
           onImport={importAndAnalyze}
+          onUnbind={unbindAccount}
+        />
+        <AccountPanel
+          label={copy.fide}
+          platform="fide"
+          value={fideId}
+          displayName={fideName || fideId}
+          stats={stats.fide}
+          progress={progress.fide}
+          disabled={isBusy}
+          copy={copy}
+          onChange={setFideId}
+          onValidate={validate}
+          onSync={syncOnly}
+          onImport={importAndAnalyze}
+          onUnbind={unbindAccount}
         />
       </section>
 
@@ -829,54 +978,85 @@ function AccountPanel({
   label,
   platform,
   value,
+  displayName,
+  stats,
+  progress,
   disabled,
   copy,
   onChange,
   onValidate,
   onSync,
   onImport,
+  onUnbind,
 }: {
   label: string;
   platform: Platform;
   value: string;
+  displayName: string;
+  stats: { total: number; pending: number };
+  progress: { games: number; puzzles: number };
   disabled: boolean;
   copy: Record<string, string>;
   onChange: (value: string) => void;
   onValidate: (platform: Platform) => void;
   onSync: (platform: Platform) => void;
   onImport: (platform: Platform) => void;
+  onUnbind: (platform: Platform) => void;
 }) {
+  const isBound = Boolean(value.trim());
+
   return (
     <div className="panel settings-panel">
       <div className="panel-title compact-title">
         <div>
           <p>{platformLabel(platform)}</p>
-          <strong>{label}</strong>
+          <strong>{isBound ? displayName : label}</strong>
         </div>
-        <CheckCircle2 size={18} aria-hidden="true" />
+        {isBound ? (
+          <span className="severity severity-inaccuracy">{copy.bound}</span>
+        ) : (
+          <CheckCircle2 size={18} aria-hidden="true" />
+        )}
       </div>
       <input
         className="settings-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={label}
-        disabled={disabled}
+        disabled={disabled || isBound}
       />
+      <div className="account-stat-grid">
+        <Stat label={copy.totalGames} value={stats.total} />
+        <Stat label={copy.pendingGames} value={stats.pending} />
+        <Stat label={copy.imported} value={progress.games} />
+        <Stat label={copy.puzzles} value={progress.puzzles} />
+      </div>
       <div className="action-row">
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => void onValidate(platform)}
-          disabled={disabled}
-        >
-          <CheckCircle2 size={16} aria-hidden="true" />
-          {copy.validate}
-        </button>
+        {!isBound ? (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void onValidate(platform)}
+            disabled={disabled}
+          >
+            <CheckCircle2 size={16} aria-hidden="true" />
+            {copy.validate}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void onUnbind(platform)}
+            disabled={disabled}
+          >
+            {copy.unbind}
+          </button>
+        )}
         <button
           type="button"
           className="secondary-button"
           onClick={() => void onSync(platform)}
-          disabled={disabled}
+          disabled={disabled || !isBound}
         >
           <RefreshCw size={16} aria-hidden="true" />
           {copy.sync}
@@ -885,7 +1065,7 @@ function AccountPanel({
           type="button"
           className="primary-button"
           onClick={() => void onImport(platform)}
-          disabled={disabled}
+          disabled={disabled || !isBound}
         >
           {disabled ? (
             <Loader2 className="spin" size={16} aria-hidden="true" />

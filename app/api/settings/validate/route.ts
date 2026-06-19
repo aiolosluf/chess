@@ -1,7 +1,7 @@
 import { cleanUsername, routeErrorMessage, type Platform } from "../../import-utils";
 
 type ValidatePayload = {
-  platform?: Platform;
+  platform?: Platform | "fide";
   username?: string;
 };
 
@@ -58,20 +58,52 @@ async function validateLichess(username: string) {
   };
 }
 
+async function validateFide(fideId: string) {
+  const response = await fetch(`https://ratings.fide.com/profile/${encodeURIComponent(fideId)}`, {
+    headers: API_HEADERS,
+  });
+
+  if (!response.ok) {
+    return { ok: false, message: "没有找到这个 FIDE ID" };
+  }
+
+  const html = await response.text();
+  const title = html.match(/<title>(.*?)<\/title>/i)?.[1] ?? "";
+  const h1 = html.match(/<h1[^>]*>(.*?)<\/h1>/i)?.[1] ?? "";
+  const rawName = (h1 || title)
+    .replace(/FIDE\s+Ratings\s+and\s+Statistics/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const displayName = rawName || `FIDE ${fideId}`;
+
+  return {
+    ok: true,
+    username: fideId,
+    displayName,
+    profileUrl: `https://ratings.fide.com/profile/${fideId}`,
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as ValidatePayload;
     const username = cleanUsername(payload.username);
     const platform = payload.platform;
 
-    if (!username || (platform !== "chesscom" && platform !== "lichess")) {
+    if (
+      !username ||
+      (platform !== "chesscom" && platform !== "lichess" && platform !== "fide")
+    ) {
       return Response.json({ error: "平台或用户名无效" }, { status: 400 });
     }
 
     const result =
       platform === "chesscom"
         ? await validateChessCom(username)
-        : await validateLichess(username);
+        : platform === "lichess"
+        ? await validateLichess(username)
+        : await validateFide(username);
 
     return Response.json(result, { status: result.ok ? 200 : 404 });
   } catch (error) {

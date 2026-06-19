@@ -58,6 +58,33 @@ export function hashString(value: string) {
   return (hash >>> 0).toString(36);
 }
 
+export function normalizeTimeClass(value: string) {
+  const clean = value.toLowerCase().trim();
+  if (!clean) {
+    return "";
+  }
+
+  if (["bullet", "blitz", "rapid", "classical", "correspondence"].includes(clean)) {
+    return clean;
+  }
+
+  const baseSeconds = Number(clean.split("+")[0]);
+  if (!Number.isFinite(baseSeconds)) {
+    return clean;
+  }
+
+  if (baseSeconds < 180) {
+    return "bullet";
+  }
+  if (baseSeconds < 600) {
+    return "blitz";
+  }
+  if (baseSeconds < 1800) {
+    return "rapid";
+  }
+  return "classical";
+}
+
 export function parseImportedGame(
   platform: Platform,
   username: string,
@@ -94,7 +121,7 @@ export function parseImportedGame(
     userSide,
     sourceUrl,
     gameKey,
-    timeClass: headers.TimeControl || "",
+    timeClass: normalizeTimeClass(headers.TimeControl || headers.TimeClass || ""),
   };
 }
 

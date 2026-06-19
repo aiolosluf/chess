@@ -271,7 +271,7 @@ h1 {
 .control-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: 1.4fr 0.55fr 0.7fr;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(120px, 0.7fr));
   margin-bottom: 10px;
 }
 
@@ -504,6 +504,22 @@ input:focus {
 .practice-panel {
   display: grid;
   gap: 12px;
+}
+
+.practice-filter-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.practice-filter-grid label {
+  display: grid;
+  gap: 4px;
+}
+
+.practice-filter-grid span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .board-wrap {
@@ -831,6 +847,27 @@ input:focus {
   gap: 12px;
 }
 
+.library-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.library-filter-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.library-filter-grid label {
+  display: grid;
+  gap: 5px;
+}
+
+.library-filter-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .library-grid {
   display: grid;
   gap: 10px;
@@ -849,7 +886,7 @@ input:focus {
 .settings-layout {
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(260px, 0.8fr) repeat(2, minmax(280px, 1fr));
+  grid-template-columns: minmax(240px, 0.75fr) repeat(3, minmax(260px, 1fr));
 }
 
 .settings-panel {
@@ -880,6 +917,20 @@ input:focus {
 
 .settings-input {
   width: 100%;
+}
+
+.account-stat-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.account-stat-grid .stat {
+  padding: 8px 9px;
+}
+
+.account-stat-grid .stat strong {
+  font-size: 18px;
 }
 
 .settings-panel .action-row {
@@ -931,6 +982,17 @@ input:focus {
   align-items: center;
   display: flex;
   justify-content: space-between;
+}
+
+.library-check {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.library-check input {
+  height: 16px;
+  width: 16px;
 }
 
 .library-card h2 {
@@ -998,6 +1060,11 @@ input:focus {
   gap: 12px;
   justify-content: space-between;
   margin-bottom: 14px;
+}
+
+.analysis-head-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .analysis-head h2 {
@@ -1296,6 +1363,10 @@ input:focus {
     grid-template-columns: 1fr;
   }
 
+  .practice-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
   .mistake-row {
     grid-template-columns: 18px 72px 1fr;
   }
@@ -1309,6 +1380,14 @@ input:focus {
     grid-template-columns: 1fr;
   }
 
+  .library-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .library-actions {
+    flex-direction: column;
+  }
+
   .settings-game-row {
     align-items: start;
     grid-template-columns: 1fr;
@@ -1316,5 +1395,9 @@ input:focus {
 
   .settings-panel .action-row {
     grid-template-columns: 1fr;
+  }
+
+  .account-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }

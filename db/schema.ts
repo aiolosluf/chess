@@ -20,6 +20,7 @@ export const puzzles = sqliteTable(
     black: text("black").notNull(),
     event: text("event").notNull(),
     playedAt: text("played_at").notNull(),
+    timeClass: text("time_class").notNull().default(""),
     moveNumber: integer("move_number").notNull(),
     ply: integer("ply").notNull(),
     side: text("side").notNull(),
@@ -42,6 +43,8 @@ export const puzzles = sqliteTable(
     index("puzzles_severity_idx").on(table.severity),
     index("puzzles_dedupe_key_idx").on(table.dedupeKey),
     index("puzzles_source_game_idx").on(table.sourceGameId),
+    index("puzzles_played_at_idx").on(table.playedAt),
+    index("puzzles_time_class_idx").on(table.timeClass),
   ]
 );
 
@@ -81,7 +84,22 @@ export const userSettings = sqliteTable("user_settings", {
   id: integer("id").primaryKey(),
   chessComUsername: text("chesscom_username").notNull().default(""),
   lichessUsername: text("lichess_username").notNull().default(""),
+  fideId: text("fide_id").notNull().default(""),
+  fideName: text("fide_name").notNull().default(""),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const practiceEvents = sqliteTable(
+  "practice_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    puzzleId: integer("puzzle_id").notNull(),
+    correct: integer("correct").notNull().default(0),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("practice_events_created_idx").on(table.createdAt)]
+);

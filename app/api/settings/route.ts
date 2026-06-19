@@ -4,6 +4,8 @@ import { cleanUsername, routeErrorMessage } from "../import-utils";
 type SettingsPayload = {
   chessComUsername?: string;
   lichessUsername?: string;
+  fideId?: string;
+  fideName?: string;
 };
 
 export async function GET() {
@@ -14,6 +16,8 @@ export async function GET() {
         `SELECT
           chesscom_username AS chessComUsername,
           lichess_username AS lichessUsername,
+          fide_id AS fideId,
+          fide_name AS fideName,
           updated_at AS updatedAt
         FROM user_settings
         WHERE id = 1`
@@ -24,6 +28,8 @@ export async function GET() {
       settings: settings ?? {
         chessComUsername: "",
         lichessUsername: "",
+        fideId: "",
+        fideName: "",
         updatedAt: "",
       },
     });
@@ -37,6 +43,8 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as SettingsPayload;
     const chessComUsername = cleanUsername(payload.chessComUsername);
     const lichessUsername = cleanUsername(payload.lichessUsername);
+    const fideId = cleanUsername(payload.fideId);
+    const fideName = cleanUsername(payload.fideName);
     const db = await getPuzzleD1();
 
     await db
@@ -45,18 +53,22 @@ export async function POST(request: Request) {
           id,
           chesscom_username,
           lichess_username,
+          fide_id,
+          fide_name,
           updated_at
-        ) VALUES (1, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
           chesscom_username = excluded.chesscom_username,
           lichess_username = excluded.lichess_username,
+          fide_id = excluded.fide_id,
+          fide_name = excluded.fide_name,
           updated_at = CURRENT_TIMESTAMP`
       )
-      .bind(chessComUsername, lichessUsername)
+      .bind(chessComUsername, lichessUsername, fideId, fideName)
       .run();
 
     return Response.json({
-      settings: { chessComUsername, lichessUsername },
+      settings: { chessComUsername, lichessUsername, fideId, fideName },
     });
   } catch (error) {
     return Response.json({ error: routeErrorMessage(error) }, { status: 500 });

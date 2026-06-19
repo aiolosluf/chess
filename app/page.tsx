@@ -23,6 +23,7 @@ import {
   Loader2,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Settings,
@@ -59,6 +60,7 @@ type AnalysisResult = {
   black: string;
   event: string;
   playedAt: string;
+  timeClass: string;
   moveNumber: number;
   ply: number;
   side: "w" | "b";
@@ -87,6 +89,12 @@ type PuzzleStats = {
   attempts: number;
   solves: number;
   averageLoss: number;
+  todayAttempts: number;
+  todaySolves: number;
+  weekAttempts: number;
+  weekSolves: number;
+  monthAttempts: number;
+  monthSolves: number;
 };
 
 type EngineAnalysis = {
@@ -166,6 +174,9 @@ const COPY = {
     statsLabel: "题库统计",
     total: "题目",
     attempts: "练习",
+    today: "今日",
+    week: "7日",
+    month: "30日",
     accuracy: "命中",
     averageLoss: "均损",
     library: "题库管理",
@@ -180,12 +191,20 @@ const COPY = {
     loadPgn: "载入 PGN",
     game: "棋局",
     depth: "深度",
+    timeClass: "时间类型",
+    gameDate: "棋局日期",
     range: "范围",
     notLoaded: "未载入",
     first40: "前 40 手",
     first60: "前 60 手",
     first100: "前 100 手",
     all: "全部",
+    unknown: "未分类",
+    bullet: "Bullet",
+    blitz: "Blitz",
+    rapid: "Rapid",
+    classical: "Classical",
+    correspondence: "Correspondence",
     both: "双方",
     white: "白方",
     black: "黑方",
@@ -197,6 +216,16 @@ const COPY = {
     noCandidates: "暂无候选题",
     practice: "刷题",
     randomPuzzle: "随机题",
+    practiceRange: "题目范围",
+    source: "来源",
+    lastYear: "最近一年",
+    lastHalfYear: "最近半年",
+    lastThreeMonths: "最近三个月",
+    last30Days: "最近30天",
+    chesscom: "Chess.com",
+    lichess: "Lichess",
+    fide: "FIDE",
+    pgn: "PGN",
     waitingLibrary: "题库等待中",
     noPuzzle: "无题目",
     findBestMove: "找出 Stockfish 推荐的更好走法",
@@ -217,6 +246,7 @@ const COPY = {
     next: "下一题",
     reviewGame: "回顾棋局",
     closeAnalysis: "关闭分析",
+    flipBoard: "反转棋盘",
     engineAnalysis: "引擎分析",
     engineLines: "候选走法",
     gameRecord: "棋谱记录",
@@ -237,6 +267,9 @@ const COPY = {
     statsLabel: "Puzzle stats",
     total: "Puzzles",
     attempts: "Attempts",
+    today: "Today",
+    week: "7 days",
+    month: "30 days",
     accuracy: "Accuracy",
     averageLoss: "Avg loss",
     library: "Library",
@@ -251,12 +284,20 @@ const COPY = {
     loadPgn: "Load PGN",
     game: "Game",
     depth: "Depth",
+    timeClass: "Time class",
+    gameDate: "Game date",
     range: "Range",
     notLoaded: "Not loaded",
     first40: "First 40 plies",
     first60: "First 60 plies",
     first100: "First 100 plies",
     all: "All",
+    unknown: "Unknown",
+    bullet: "Bullet",
+    blitz: "Blitz",
+    rapid: "Rapid",
+    classical: "Classical",
+    correspondence: "Correspondence",
     both: "Both",
     white: "White",
     black: "Black",
@@ -268,6 +309,16 @@ const COPY = {
     noCandidates: "No candidates",
     practice: "Practice",
     randomPuzzle: "Random puzzle",
+    practiceRange: "Puzzle range",
+    source: "Source",
+    lastYear: "Last year",
+    lastHalfYear: "Last 6 months",
+    lastThreeMonths: "Last 3 months",
+    last30Days: "Last 30 days",
+    chesscom: "Chess.com",
+    lichess: "Lichess",
+    fide: "FIDE",
+    pgn: "PGN",
     waitingLibrary: "Waiting for puzzles",
     noPuzzle: "No puzzle",
     findBestMove: "Find Stockfish's better move",
@@ -288,6 +339,7 @@ const COPY = {
     next: "Next",
     reviewGame: "Review game",
     closeAnalysis: "Close analysis",
+    flipBoard: "Flip board",
     engineAnalysis: "Engine analysis",
     engineLines: "Candidate moves",
     gameRecord: "Game record",
@@ -574,6 +626,12 @@ function normalizeStats(stats: Partial<PuzzleStats> | null): PuzzleStats {
     attempts: Number(stats?.attempts ?? 0),
     solves: Number(stats?.solves ?? 0),
     averageLoss: Number(stats?.averageLoss ?? 0),
+    todayAttempts: Number(stats?.todayAttempts ?? 0),
+    todaySolves: Number(stats?.todaySolves ?? 0),
+    weekAttempts: Number(stats?.weekAttempts ?? 0),
+    weekSolves: Number(stats?.weekSolves ?? 0),
+    monthAttempts: Number(stats?.monthAttempts ?? 0),
+    monthSolves: Number(stats?.monthSolves ?? 0),
   };
 }
 
@@ -704,6 +762,11 @@ export default function Home() {
   const [analyzeSide, setAnalyzeSide] = useState<AnalyzeSide>("both");
   const [depth, setDepth] = useState(10);
   const [halfMoveLimit, setHalfMoveLimit] = useState("60");
+  const [manualTimeClass, setManualTimeClass] = useState("");
+  const [manualPlayedAt, setManualPlayedAt] = useState("");
+  const [practiceRange, setPracticeRange] = useState("all");
+  const [practiceTimeClass, setPracticeTimeClass] = useState("all");
+  const [practiceSource, setPracticeSource] = useState("all");
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   const [selectedResultIds, setSelectedResultIds] = useState<Set<string>>(
     () => new Set()
@@ -717,6 +780,12 @@ export default function Home() {
     attempts: 0,
     solves: 0,
     averageLoss: 0,
+    todayAttempts: 0,
+    todaySolves: 0,
+    weekAttempts: 0,
+    weekSolves: 0,
+    monthAttempts: 0,
+    monthSolves: 0,
   });
   const [activePuzzle, setActivePuzzle] = useState<PuzzleRecord | null>(null);
   const [boardFen, setBoardFen] = useState("");
@@ -911,7 +980,12 @@ export default function Home() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/puzzles/random");
+      const params = new URLSearchParams({
+        range: practiceRange,
+        timeClass: practiceTimeClass,
+        sourcePlatform: practiceSource,
+      });
+      const response = await fetch(`/api/puzzles/random?${params}`);
       if (!response.ok) {
         throw new Error(await readJsonError(response));
       }
@@ -1000,7 +1074,11 @@ export default function Home() {
     const black = headers.Black || "Black";
     const gameTitle = makeGameTitle(headers);
     const event = headers.Event || "Training";
-    const playedAt = headers.Date || "";
+    const playedAt =
+      manualPlayedAt.replace(/-/g, ".") ||
+      headers.UTCDate ||
+      headers.Date ||
+      new Date().toISOString().slice(0, 10).replace(/-/g, ".");
     const found: AnalysisResult[] = [];
 
     try {
@@ -1051,6 +1129,7 @@ export default function Home() {
             black,
             event,
             playedAt,
+            timeClass: manualTimeClass,
             moveNumber,
             ply: index + 1,
             side: move.color,
@@ -1292,24 +1371,32 @@ export default function Home() {
         <div className="top-actions">
           <div className="top-stats" aria-label={copy.statsLabel}>
             <Stat label={copy.total} value={stats.total} />
-            <Stat label={copy.attempts} value={stats.attempts} />
             <Stat
-              label={copy.accuracy}
-              value={
-                stats.attempts ? `${Math.round((stats.solves / stats.attempts) * 100)}%` : "0%"
-              }
+              label={copy.today}
+              value={`${stats.todayAttempts} / ${
+                stats.todayAttempts
+                  ? Math.round((stats.todaySolves / stats.todayAttempts) * 100)
+                  : 0
+              }%`}
             />
-            <Stat label={copy.averageLoss} value={lossScoreLabel(stats.averageLoss)} />
+            <Stat
+              label={copy.week}
+              value={`${stats.weekAttempts} / ${
+                stats.weekAttempts
+                  ? Math.round((stats.weekSolves / stats.weekAttempts) * 100)
+                  : 0
+              }%`}
+            />
+            <Stat
+              label={copy.month}
+              value={`${stats.monthAttempts} / ${
+                stats.monthAttempts
+                  ? Math.round((stats.monthSolves / stats.monthAttempts) * 100)
+                  : 0
+              }%`}
+            />
           </div>
           <div className="top-buttons">
-            <Link className="secondary-button nav-button" href="/library">
-              <BookOpen size={16} aria-hidden="true" />
-              {copy.library}
-            </Link>
-            <Link className="secondary-button nav-button" href="/settings">
-              <Settings size={16} aria-hidden="true" />
-              {copy.settings}
-            </Link>
             <button
               type="button"
               className="icon-button language-button"
@@ -1467,6 +1554,30 @@ export default function Home() {
                 <option value="all">{copy.all}</option>
               </select>
             </label>
+
+            <label>
+              <span>{copy.timeClass}</span>
+              <select
+                value={manualTimeClass}
+                onChange={(event) => setManualTimeClass(event.target.value)}
+              >
+                <option value="">{copy.unknown}</option>
+                <option value="bullet">{copy.bullet}</option>
+                <option value="blitz">{copy.blitz}</option>
+                <option value="rapid">{copy.rapid}</option>
+                <option value="classical">{copy.classical}</option>
+                <option value="correspondence">{copy.correspondence}</option>
+              </select>
+            </label>
+
+            <label>
+              <span>{copy.gameDate}</span>
+              <input
+                type="date"
+                value={manualPlayedAt}
+                onChange={(event) => setManualPlayedAt(event.target.value)}
+              />
+            </label>
           </div>
 
           <div className="segmented" aria-label={copy.analyzeColor}>
@@ -1580,6 +1691,50 @@ export default function Home() {
               </strong>
             </div>
             <Database size={22} aria-hidden="true" />
+          </div>
+
+          <div className="practice-filter-grid">
+            <label>
+              <span>{copy.practiceRange}</span>
+              <select
+                value={practiceRange}
+                onChange={(event) => setPracticeRange(event.target.value)}
+              >
+                <option value="all">{copy.all}</option>
+                <option value="1y">{copy.lastYear}</option>
+                <option value="6m">{copy.lastHalfYear}</option>
+                <option value="3m">{copy.lastThreeMonths}</option>
+                <option value="30d">{copy.last30Days}</option>
+              </select>
+            </label>
+            <label>
+              <span>{copy.timeClass}</span>
+              <select
+                value={practiceTimeClass}
+                onChange={(event) => setPracticeTimeClass(event.target.value)}
+              >
+                <option value="all">{copy.all}</option>
+                <option value="">{copy.unknown}</option>
+                <option value="bullet">{copy.bullet}</option>
+                <option value="blitz">{copy.blitz}</option>
+                <option value="rapid">{copy.rapid}</option>
+                <option value="classical">{copy.classical}</option>
+                <option value="correspondence">{copy.correspondence}</option>
+              </select>
+            </label>
+            <label>
+              <span>{copy.source}</span>
+              <select
+                value={practiceSource}
+                onChange={(event) => setPracticeSource(event.target.value)}
+              >
+                <option value="all">{copy.all}</option>
+                <option value="pgn">{copy.pgn}</option>
+                <option value="chesscom">{copy.chesscom}</option>
+                <option value="lichess">{copy.lichess}</option>
+                <option value="fide">{copy.fide}</option>
+              </select>
+            </label>
           </div>
 
           <ChessBoard
@@ -1814,6 +1969,7 @@ function AnalysisPanel({
   const [scoreCp, setScoreCp] = useState(0);
   const [searchDepth, setSearchDepth] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [boardOrientation, setBoardOrientation] = useState<"w" | "b">(puzzle.side);
   const engineRef = useRef<BrowserStockfish | null>(null);
   const moveButtonRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const fen = nodes[currentIndex]?.fen ?? puzzle.fenBefore;
@@ -2165,10 +2321,22 @@ function AnalysisPanel({
             <p className="eyebrow">{copy.engineAnalysis}</p>
             <h2>{puzzle.gameTitle}</h2>
           </div>
-          <button type="button" className="secondary-button" onClick={onClose}>
-            <X size={16} aria-hidden="true" />
-            {copy.closeAnalysis}
-          </button>
+          <div className="analysis-head-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                setBoardOrientation((current) => (current === "w" ? "b" : "w"))
+              }
+            >
+              <RefreshCw size={16} aria-hidden="true" />
+              {copy.flipBoard}
+            </button>
+            <button type="button" className="secondary-button" onClick={onClose}>
+              <X size={16} aria-hidden="true" />
+              {copy.closeAnalysis}
+            </button>
+          </div>
         </div>
 
         <div className="analysis-layout">
@@ -2180,7 +2348,7 @@ function AnalysisPanel({
               </div>
               <ChessBoard
                 fen={fen}
-                orientation={puzzle.side}
+                orientation={boardOrientation}
                 activeSide={chess.turn()}
                 selectedSquare={selectedSquare}
                 legalTargets={legalTargets}

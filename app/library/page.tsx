@@ -22,6 +22,7 @@ type PuzzleRecord = {
   sourcePlatform: string;
   sourceUsername: string;
   sourceGameId: number | null;
+  timeClass: string;
   gameTitle: string;
   white: string;
   black: string;
@@ -58,6 +59,13 @@ const COPY = {
     settings: "用户设置",
     refresh: "刷新",
     delete: "删除",
+    deleteSelected: "删除所选",
+    filters: "筛选",
+    all: "全部",
+    timeClass: "时间类型",
+    from: "开始日期",
+    to: "结束日期",
+    selected: "已选",
     total: "题目",
     attempts: "练习",
     accuracy: "命中",
@@ -85,6 +93,13 @@ const COPY = {
     settings: "Settings",
     refresh: "Refresh",
     delete: "Delete",
+    deleteSelected: "Delete selected",
+    filters: "Filters",
+    all: "All",
+    timeClass: "Time class",
+    from: "From",
+    to: "To",
+    selected: "Selected",
     total: "Puzzles",
     attempts: "Attempts",
     accuracy: "Accuracy",
@@ -176,6 +191,11 @@ export default function LibraryPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [timeClassFilter, setTimeClassFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [message, setMessage] = useState("");
 
   const copy = COPY[locale];
@@ -189,7 +209,17 @@ export default function LibraryPage() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/puzzles");
+      const params = new URLSearchParams({
+        sourcePlatform: sourceFilter,
+        timeClass: timeClassFilter,
+      });
+      if (fromDate) {
+        params.set("from", fromDate.replace(/-/g, "."));
+      }
+      if (toDate) {
+        params.set("to", toDate.replace(/-/g, "."));
+      }
+      const response = await fetch(`/api/puzzles?${params}`);
       if (!response.ok) {
         throw new Error(await readJsonError(response));
       }
@@ -199,13 +229,14 @@ export default function LibraryPage() {
         stats: Partial<PuzzleStats>;
       };
       setPuzzles(payload.puzzles ?? []);
+      setSelectedIds(new Set());
       setStats(normalizeStats(payload.stats));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.loadFailed);
     } finally {
       setIsLoading(false);
     }
-  }, [copy.loadFailed]);
+  }, [copy.loadFailed, fromDate, sourceFilter, timeClassFilter, toDate]);
 
   async function deletePuzzle(id: number) {
     if (!window.confirm(copy.confirmDelete)) {
@@ -226,6 +257,27 @@ export default function LibraryPage() {
       setMessage(error instanceof Error ? error.message : copy.deleteFailed);
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function deleteSelected() {
+    if (!selectedIds.size || !window.confirm(copy.confirmDelete)) {
+      return;
+    }
+
+    setMessage("");
+    try {
+      const response = await fetch("/api/puzzles", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids: [...selectedIds] }),
+      });
+      if (!response.ok) {
+        throw new Error(await readJsonError(response));
+      }
+      await loadPuzzles();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : copy.deleteFailed);
     }
   }
 
@@ -282,19 +334,63 @@ export default function LibraryPage() {
       <section className="panel library-panel">
         <div className="result-head">
           <strong>{copy.title}</strong>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => void loadPuzzles()}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <Loader2 className="spin" size={16} aria-hidden="true" />
-            ) : (
-              <RefreshCw size={16} aria-hidden="true" />
-            )}
-            {copy.refresh}
-          </button>
+          <div className="library-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void deleteSelected()}
+              disabled={!selectedIds.size || isLoading}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              {copy.deleteSelected} ({selectedIds.size})
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void loadPuzzles()}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="spin" size={16} aria-hidden="true" />
+              ) : (
+                <RefreshCw size={16} aria-hidden="true" />
+              )}
+              {copy.refresh}
+            </button>
+          </div>
+        </div>
+
+        <div className="library-filter-grid">
+          <label>
+            <span>{copy.source}</span>
+            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+              <option value="all">{copy.all}</option>
+              <option value="pgn">PGN</option>
+              <option value="chesscom">Chess.com</option>
+              <option value="lichess">Lichess</option>
+              <option value="fide">FIDE</option>
+            </select>
+          </label>
+          <label>
+            <span>{copy.timeClass}</span>
+            <select value={timeClassFilter} onChange={(event) => setTimeClassFilter(event.target.value)}>
+              <option value="all">{copy.all}</option>
+              <option value="">Unknown</option>
+              <option value="bullet">Bullet</option>
+              <option value="blitz">Blitz</option>
+              <option value="rapid">Rapid</option>
+              <option value="classical">Classical</option>
+              <option value="correspondence">Correspondence</option>
+            </select>
+          </label>
+          <label>
+            <span>{copy.from}</span>
+            <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
+          </label>
+          <label>
+            <span>{copy.to}</span>
+            <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
+          </label>
         </div>
 
         {isLoading ? (
@@ -306,9 +402,26 @@ export default function LibraryPage() {
             {puzzles.map((puzzle) => (
               <article className="library-card" key={puzzle.id}>
                 <div className="library-card-head">
-                  <span className={severityClass(puzzle.severity)}>
-                    {SEVERITY_LABELS[locale][puzzle.severity]}
-                  </span>
+                  <label className="library-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(puzzle.id)}
+                      onChange={(event) => {
+                        setSelectedIds((current) => {
+                          const next = new Set(current);
+                          if (event.target.checked) {
+                            next.add(puzzle.id);
+                          } else {
+                            next.delete(puzzle.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    <span className={severityClass(puzzle.severity)}>
+                      {SEVERITY_LABELS[locale][puzzle.severity]}
+                    </span>
+                  </label>
                   <button
                     type="button"
                     className="icon-button small danger-button"
@@ -329,6 +442,7 @@ export default function LibraryPage() {
                 <div className="library-meta-grid">
                   <Meta label={copy.uploaded} value={formatDate(puzzle.createdAt, locale)} />
                   <Meta label={copy.source} value={puzzle.sourceName} />
+                  <Meta label={copy.timeClass} value={puzzle.timeClass || "Unknown"} />
                   <Meta
                     label={copy.sourceAccount}
                     value={puzzle.sourceUsername || puzzle.sourcePlatform || "PGN"}
