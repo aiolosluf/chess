@@ -107,6 +107,8 @@ async function ensurePuzzleSchema(db: D1Database) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       puzzle_id INTEGER NOT NULL,
       correct INTEGER NOT NULL DEFAULT 0,
+      improvement_cp INTEGER NOT NULL DEFAULT 0,
+      is_first_attempt INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     db.prepare(
@@ -211,5 +213,27 @@ async function ensurePuzzleSchema(db: D1Database) {
 
   if (settingsMigrations.length) {
     await db.batch(settingsMigrations);
+  }
+
+  const practiceColumns = await db.prepare("PRAGMA table_info(practice_events)").all();
+  const practiceNames = new Set(
+    (practiceColumns.results ?? []).map((column) => String(column.name))
+  );
+  const practiceMigrations = [];
+
+  if (!practiceNames.has("improvement_cp")) {
+    practiceMigrations.push(
+      db.prepare("ALTER TABLE practice_events ADD COLUMN improvement_cp INTEGER NOT NULL DEFAULT 0")
+    );
+  }
+
+  if (!practiceNames.has("is_first_attempt")) {
+    practiceMigrations.push(
+      db.prepare("ALTER TABLE practice_events ADD COLUMN is_first_attempt INTEGER NOT NULL DEFAULT 0")
+    );
+  }
+
+  if (practiceMigrations.length) {
+    await db.batch(practiceMigrations);
   }
 }

@@ -12,13 +12,22 @@ function idFromRequest(request: Request) {
 export async function POST(request: Request) {
   try {
     const id = idFromRequest(request);
-    const payload = (await request.json()) as { correct?: boolean };
+    const payload = (await request.json()) as {
+      correct?: boolean;
+      improvementCp?: number;
+    };
 
     if (!Number.isFinite(id)) {
       return Response.json({ error: "题目编号无效" }, { status: 400 });
     }
 
     const db = await getPuzzleD1();
+    const before = await db
+      .prepare("SELECT attempts FROM puzzles WHERE id = ?")
+      .bind(id)
+      .first<{ attempts?: number }>();
+    const isFirstAttempt = Number(before?.attempts ?? 0) === 0;
+    const improvementCp = Math.round(Number(payload.improvementCp ?? 0));
     await db
       .prepare(
         `UPDATE puzzles
@@ -31,10 +40,19 @@ export async function POST(request: Request) {
       .run();
     await db
       .prepare(
-        `INSERT INTO practice_events (puzzle_id, correct)
-        VALUES (?, ?)`
+        `INSERT INTO practice_events (
+          puzzle_id,
+          correct,
+          improvement_cp,
+          is_first_attempt
+        ) VALUES (?, ?, ?, ?)`
       )
-      .bind(id, payload.correct ? 1 : 0)
+      .bind(
+        id,
+        payload.correct ? 1 : 0,
+        Number.isFinite(improvementCp) ? improvementCp : 0,
+        isFirstAttempt ? 1 : 0
+      )
       .run();
 
     const puzzle = await db

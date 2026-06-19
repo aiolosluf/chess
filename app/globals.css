@@ -123,6 +123,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
+  text-align: left;
 }
 
 .stat span {
@@ -134,6 +135,61 @@ h1 {
 
 .stat strong {
   font-size: 20px;
+  white-space: nowrap;
+}
+
+.stat-button {
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  min-height: 0;
+  width: 100%;
+}
+
+.stat-button:hover {
+  border-color: #9bbca7;
+}
+
+.stats-history-panel {
+  margin-bottom: 14px;
+}
+
+.stats-history-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.practice-history-table {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  overflow: hidden;
+}
+
+.practice-history-table > strong,
+.practice-history-table div,
+.practice-history-table p {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 56px 72px;
+  margin: 0;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.practice-history-table > strong {
+  background: #edf3ef;
+  display: block;
+}
+
+.practice-history-table div:nth-child(odd) {
+  background: #f7faf7;
+}
+
+.practice-history-table b {
+  text-align: right;
 }
 
 .library-subtitle {
@@ -520,6 +576,29 @@ input:focus {
 .practice-filter-grid span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.multi-filter-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.multi-filter-grid button {
+  background: #f7faf7;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 32px;
+  padding: 0 8px;
+}
+
+.multi-filter-grid button.active {
+  background: var(--mint);
+  border-color: #8aae9a;
+  color: var(--green-strong);
 }
 
 .board-wrap {
@@ -1104,6 +1183,10 @@ input:focus {
   transition: height 180ms ease;
 }
 
+.eval-bar.black-bottom {
+  flex-direction: column;
+}
+
 .eval-bar span {
   background: rgba(255, 255, 255, 0.82);
   border-radius: 5px;
@@ -1145,16 +1228,22 @@ input:focus {
   gap: 8px;
 }
 
-.engine-lines div {
+.engine-lines button {
   align-items: center;
   background: #f7faf7;
   border: 1px solid var(--line);
   border-radius: 8px;
+  color: var(--foreground);
   display: grid;
   gap: 8px;
   grid-template-columns: 34px 1fr 98px;
   min-height: 40px;
   padding: 7px 9px;
+  text-align: left;
+}
+
+.engine-lines button:hover {
+  border-color: #9bbca7;
 }
 
 .engine-lines span,
@@ -1327,6 +1416,10 @@ input:focus {
 
   .top-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stats-history-grid {
+    grid-template-columns: 1fr;
   }
 
   .directory-bar {

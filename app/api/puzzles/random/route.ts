@@ -25,6 +25,43 @@ function dateCutoff(range: string | null) {
   return date.toISOString().slice(0, 10).replace(/-/g, ".");
 }
 
+function multiValues(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => item !== "all");
+}
+
+function addMultiFilter(
+  filters: string[],
+  values: string[],
+  column: string,
+  rawValue: string
+) {
+  const selected = multiValues(rawValue);
+  if (!selected.length) {
+    return;
+  }
+
+  const hasUnknown = selected.includes("unknown");
+  const concrete = selected.filter((item) => item !== "unknown");
+  const parts = [];
+
+  if (concrete.length) {
+    parts.push(`${column} IN (${concrete.map(() => "?").join(",")})`);
+    values.push(...concrete);
+  }
+
+  if (hasUnknown) {
+    parts.push(`${column} = ''`);
+  }
+
+  if (parts.length) {
+    filters.push(`(${parts.join(" OR ")})`);
+  }
+}
+
 function buildFilters(request: Request) {
   const params = new URL(request.url).searchParams;
   const filters = [];
@@ -33,15 +70,9 @@ function buildFilters(request: Request) {
   const timeClass = params.get("timeClass") ?? "";
   const from = dateCutoff(params.get("range"));
 
-  if (sourcePlatform && sourcePlatform !== "all") {
-    filters.push("source_platform = ?");
-    values.push(sourcePlatform);
-  }
+  addMultiFilter(filters, values, "source_platform", sourcePlatform);
 
-  if (timeClass && timeClass !== "all") {
-    filters.push("time_class = ?");
-    values.push(timeClass);
-  }
+  addMultiFilter(filters, values, "time_class", timeClass);
 
   if (from) {
     filters.push("replace(played_at, '.', '-') >= replace(?, '.', '-')");

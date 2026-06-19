@@ -162,6 +162,43 @@ function dateCutoff(range: string | null) {
   return date.toISOString().slice(0, 10).replace(/-/g, ".");
 }
 
+function multiValues(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => item !== "all");
+}
+
+function addMultiFilter(
+  filters: string[],
+  values: string[],
+  column: string,
+  rawValue: string
+) {
+  const selected = multiValues(rawValue);
+  if (!selected.length) {
+    return;
+  }
+
+  const hasUnknown = selected.includes("unknown");
+  const concrete = selected.filter((item) => item !== "unknown");
+  const parts = [];
+
+  if (concrete.length) {
+    parts.push(`${column} IN (${concrete.map(() => "?").join(",")})`);
+    values.push(...concrete);
+  }
+
+  if (hasUnknown) {
+    parts.push(`${column} = ''`);
+  }
+
+  if (parts.length) {
+    filters.push(`(${parts.join(" OR ")})`);
+  }
+}
+
 function buildPuzzleFilters(request: Request) {
   const params = new URL(request.url).searchParams;
   const filters = [];
@@ -172,20 +209,14 @@ function buildPuzzleFilters(request: Request) {
   const from = params.get("from") || dateCutoff(params.get("range"));
   const to = params.get("to") ?? "";
 
-  if (sourcePlatform && sourcePlatform !== "all") {
-    filters.push("source_platform = ?");
-    values.push(sourcePlatform);
-  }
+  addMultiFilter(filters, values, "source_platform", sourcePlatform);
 
   if (sourceUsername) {
     filters.push("lower(source_username) = lower(?)");
     values.push(sourceUsername);
   }
 
-  if (timeClass && timeClass !== "all") {
-    filters.push("time_class = ?");
-    values.push(timeClass);
-  }
+  addMultiFilter(filters, values, "time_class", timeClass);
 
   if (from) {
     filters.push("replace(played_at, '.', '-') >= replace(?, '.', '-')");
@@ -266,21 +297,51 @@ export async function GET(request: Request) {
     const practiceStats = await db
       .prepare(
         `SELECT
-          COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN 1 ELSE 0 END), 0) AS todayAttempts,
-          COALESCE(SUM(CASE WHEN date(created_at) = date('now') THEN correct ELSE 0 END), 0) AS todaySolves,
-          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-7 days') THEN 1 ELSE 0 END), 0) AS weekAttempts,
-          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-7 days') THEN correct ELSE 0 END), 0) AS weekSolves,
-          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS monthAttempts,
-          COALESCE(SUM(CASE WHEN datetime(created_at) >= datetime('now', '-30 days') THEN correct ELSE 0 END), 0) AS monthSolves
+          COALESCE(SUM(CASE WHEN is_first_attempt = 1 AND date(created_at) = date('now') THEN 1 ELSE 0 END), 0) AS todayAttempts,
+          COALESCE(ROUND(AVG(CASE WHEN is_first_attempt = 1 AND date(created_at) = date('now') THEN improvement_cp END)), 0) AS todayImprovement,
+          COALESCE(SUM(CASE WHEN is_first_attempt = 1 AND datetime(created_at) >= datetime('now', '-7 days') THEN 1 ELSE 0 END), 0) AS weekAttempts,
+          COALESCE(ROUND(AVG(CASE WHEN is_first_attempt = 1 AND datetime(created_at) >= datetime('now', '-7 days') THEN improvement_cp END)), 0) AS weekImprovement,
+          COALESCE(SUM(CASE WHEN is_first_attempt = 1 AND datetime(created_at) >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0) AS monthAttempts,
+          COALESCE(ROUND(AVG(CASE WHEN is_first_attempt = 1 AND datetime(created_at) >= datetime('now', '-30 days') THEN improvement_cp END)), 0) AS monthImprovement
         FROM practice_events`
       )
       .first();
+    const daily = await db
+      .prepare(
+        `SELECT
+          date(created_at) AS period,
+          COUNT(*) AS attempts,
+          COALESCE(ROUND(AVG(improvement_cp)), 0) AS improvement
+        FROM practice_events
+        WHERE is_first_attempt = 1
+        GROUP BY date(created_at)
+        ORDER BY period DESC
+        LIMIT 14`
+      )
+      .all();
+    const weekly = await db
+      .prepare(
+        `SELECT
+          strftime('%Y-W%W', created_at) AS period,
+          COUNT(*) AS attempts,
+          COALESCE(ROUND(AVG(improvement_cp)), 0) AS improvement
+        FROM practice_events
+        WHERE is_first_attempt = 1
+        GROUP BY strftime('%Y-W%W', created_at)
+        ORDER BY period DESC
+        LIMIT 12`
+      )
+      .all();
 
     return Response.json({
       puzzles: puzzles.results ?? [],
       stats: {
         ...(stats ?? { total: 0, attempts: 0, solves: 0, averageLoss: 0 }),
         ...(practiceStats ?? {}),
+      },
+      practiceHistory: {
+        daily: daily.results ?? [],
+        weekly: weekly.results ?? [],
       },
     });
   } catch (error) {

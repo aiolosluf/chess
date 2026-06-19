@@ -97,6 +97,8 @@ export const practiceEvents = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     puzzleId: integer("puzzle_id").notNull(),
     correct: integer("correct").notNull().default(0),
+    improvementCp: integer("improvement_cp").notNull().default(0),
+    isFirstAttempt: integer("is_first_attempt").notNull().default(0),
     createdAt: text("created_at")
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),

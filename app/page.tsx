@@ -90,11 +90,22 @@ type PuzzleStats = {
   solves: number;
   averageLoss: number;
   todayAttempts: number;
-  todaySolves: number;
+  todayImprovement: number;
   weekAttempts: number;
-  weekSolves: number;
+  weekImprovement: number;
   monthAttempts: number;
-  monthSolves: number;
+  monthImprovement: number;
+};
+
+type PracticeHistoryRow = {
+  period: string;
+  attempts: number;
+  improvement: number;
+};
+
+type PracticeHistory = {
+  daily: PracticeHistoryRow[];
+  weekly: PracticeHistoryRow[];
 };
 
 type EngineAnalysis = {
@@ -157,6 +168,17 @@ const SEVERITY_LABELS_EN: Record<Severity, string> = {
   mistake: "Mistake",
   blunder: "Blunder",
 };
+
+const TIME_CLASS_FILTERS = [
+  "unknown",
+  "bullet",
+  "blitz",
+  "rapid",
+  "classical",
+  "correspondence",
+];
+
+const SOURCE_FILTERS = ["pgn", "chesscom", "lichess", "fide"];
 
 const SIDE_LABELS: Record<"w" | "b", string> = {
   w: "白方",
@@ -627,11 +649,11 @@ function normalizeStats(stats: Partial<PuzzleStats> | null): PuzzleStats {
     solves: Number(stats?.solves ?? 0),
     averageLoss: Number(stats?.averageLoss ?? 0),
     todayAttempts: Number(stats?.todayAttempts ?? 0),
-    todaySolves: Number(stats?.todaySolves ?? 0),
+    todayImprovement: Number(stats?.todayImprovement ?? 0),
     weekAttempts: Number(stats?.weekAttempts ?? 0),
-    weekSolves: Number(stats?.weekSolves ?? 0),
+    weekImprovement: Number(stats?.weekImprovement ?? 0),
     monthAttempts: Number(stats?.monthAttempts ?? 0),
-    monthSolves: Number(stats?.monthSolves ?? 0),
+    monthImprovement: Number(stats?.monthImprovement ?? 0),
   };
 }
 
@@ -652,6 +674,16 @@ function signedScoreLabel(cp: number) {
 function lossScoreLabel(cp: number) {
   const value = -Math.abs(Math.round(cp) / 100);
   return value.toFixed(1);
+}
+
+function improvementScoreLabel(cp: number) {
+  const value = Math.round(cp) / 100;
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}`;
+}
+
+function practiceStatValue(attempts: number, improvementCp: number) {
+  return `${attempts} / ${improvementScoreLabel(improvementCp)}`;
 }
 
 function evalPercent(cp: number) {
@@ -765,8 +797,8 @@ export default function Home() {
   const [manualTimeClass, setManualTimeClass] = useState("");
   const [manualPlayedAt, setManualPlayedAt] = useState("");
   const [practiceRange, setPracticeRange] = useState("all");
-  const [practiceTimeClass, setPracticeTimeClass] = useState("all");
-  const [practiceSource, setPracticeSource] = useState("all");
+  const [practiceTimeClasses, setPracticeTimeClasses] = useState<string[]>([]);
+  const [practiceSources, setPracticeSources] = useState<string[]>([]);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   const [selectedResultIds, setSelectedResultIds] = useState<Set<string>>(
     () => new Set()
@@ -781,12 +813,17 @@ export default function Home() {
     solves: 0,
     averageLoss: 0,
     todayAttempts: 0,
-    todaySolves: 0,
+    todayImprovement: 0,
     weekAttempts: 0,
-    weekSolves: 0,
+    weekImprovement: 0,
     monthAttempts: 0,
-    monthSolves: 0,
+    monthImprovement: 0,
   });
+  const [practiceHistory, setPracticeHistory] = useState<PracticeHistory>({
+    daily: [],
+    weekly: [],
+  });
+  const [statsOpen, setStatsOpen] = useState(false);
   const [activePuzzle, setActivePuzzle] = useState<PuzzleRecord | null>(null);
   const [boardFen, setBoardFen] = useState("");
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -962,10 +999,15 @@ export default function Home() {
       const payload = (await response.json()) as {
         puzzles: PuzzleRecord[];
         stats: Partial<PuzzleStats>;
+        practiceHistory?: Partial<PracticeHistory>;
       };
 
       setPuzzles(payload.puzzles ?? []);
       setStats(normalizeStats(payload.stats));
+      setPracticeHistory({
+        daily: payload.practiceHistory?.daily ?? [],
+        weekly: payload.practiceHistory?.weekly ?? [],
+      });
 
       if (!activePuzzle && payload.puzzles?.length) {
         await loadRandomPuzzle();
@@ -982,8 +1024,10 @@ export default function Home() {
     try {
       const params = new URLSearchParams({
         range: practiceRange,
-        timeClass: practiceTimeClass,
-        sourcePlatform: practiceSource,
+        timeClass: practiceTimeClasses.length
+          ? practiceTimeClasses.join(",")
+          : "all",
+        sourcePlatform: practiceSources.length ? practiceSources.join(",") : "all",
       });
       const response = await fetch(`/api/puzzles/random?${params}`);
       if (!response.ok) {
@@ -1195,7 +1239,7 @@ export default function Home() {
     }
   }
 
-  async function recordAttempt(correct: boolean) {
+  async function recordAttempt(correct: boolean, improvementCp: number) {
     if (!activePuzzle) {
       return;
     }
@@ -1204,7 +1248,7 @@ export default function Home() {
       const response = await fetch(`/api/puzzles/${activePuzzle.id}/attempt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ correct }),
+        body: JSON.stringify({ correct, improvementCp }),
       });
 
       if (!response.ok) {
@@ -1248,7 +1292,7 @@ export default function Home() {
           text: copy.brilliantBest,
           detail: `${copy.bestMove}: ${puzzle.bestMoveSan}`,
         });
-        await recordAttempt(true);
+        await recordAttempt(true, puzzle.lossCp);
         return;
       }
 
@@ -1258,7 +1302,7 @@ export default function Home() {
           kind: "repeat",
           text: `${copy.repeated}: ${move.san}`,
         });
-        await recordAttempt(false);
+        await recordAttempt(false, 0);
         return;
       }
 
@@ -1280,6 +1324,7 @@ export default function Home() {
       const userLoss = Math.round(
         Math.min(2000, Math.max(0, before.scoreCp - -after.scoreCp))
       );
+      const improvementCp = puzzle.lossCp - userLoss;
       const detail = `${copy.oldMove}: ${lossScoreLabel(puzzle.lossCp)} · ${move.san}: ${lossScoreLabel(userLoss)}`;
 
       if (userLoss <= puzzle.lossCp + WORSE_MARGIN_CP) {
@@ -1296,7 +1341,7 @@ export default function Home() {
         });
       }
 
-      await recordAttempt(false);
+      await recordAttempt(false, improvementCp);
     } catch {
       setAnswerState({ kind: "wrong", text: copy.illegal });
       setSelectedSquare(null);
@@ -1356,6 +1401,28 @@ export default function Home() {
     });
   }
 
+  function toggleFilterValue(
+    value: string,
+    setter: (updater: (current: string[]) => string[]) => void
+  ) {
+    setter((current) =>
+      current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+    );
+  }
+
+  function timeClassLabel(value: string) {
+    if (value === "unknown") {
+      return copy.unknown;
+    }
+    return copy[value] ?? value;
+  }
+
+  function sourceLabel(value: string) {
+    return copy[value] ?? value;
+  }
+
   const progressPercent =
     analysisProgress.total > 0
       ? Math.round((analysisProgress.done / analysisProgress.total) * 100)
@@ -1370,30 +1437,25 @@ export default function Home() {
         </div>
         <div className="top-actions">
           <div className="top-stats" aria-label={copy.statsLabel}>
-            <Stat label={copy.total} value={stats.total} />
+            <Stat
+              label={copy.total}
+              value={stats.total}
+              onClick={() => setStatsOpen(true)}
+            />
             <Stat
               label={copy.today}
-              value={`${stats.todayAttempts} / ${
-                stats.todayAttempts
-                  ? Math.round((stats.todaySolves / stats.todayAttempts) * 100)
-                  : 0
-              }%`}
+              value={practiceStatValue(stats.todayAttempts, stats.todayImprovement)}
+              onClick={() => setStatsOpen(true)}
             />
             <Stat
               label={copy.week}
-              value={`${stats.weekAttempts} / ${
-                stats.weekAttempts
-                  ? Math.round((stats.weekSolves / stats.weekAttempts) * 100)
-                  : 0
-              }%`}
+              value={practiceStatValue(stats.weekAttempts, stats.weekImprovement)}
+              onClick={() => setStatsOpen(true)}
             />
             <Stat
               label={copy.month}
-              value={`${stats.monthAttempts} / ${
-                stats.monthAttempts
-                  ? Math.round((stats.monthSolves / stats.monthAttempts) * 100)
-                  : 0
-              }%`}
+              value={practiceStatValue(stats.monthAttempts, stats.monthImprovement)}
+              onClick={() => setStatsOpen(true)}
             />
           </div>
           <div className="top-buttons">
@@ -1401,17 +1463,43 @@ export default function Home() {
               type="button"
               className="icon-button language-button"
               onClick={() => setLocale((current) => (current === "zh" ? "en" : "zh"))}
-              title={locale === "zh" ? "Switch to English" : "切换到中文"}
-              aria-label={locale === "zh" ? "Switch to English" : "切换到中文"}
+              title={locale === "zh" ? "Switch to English" : "\u5207\u6362\u5230\u4e2d\u6587"}
+              aria-label={locale === "zh" ? "Switch to English" : "\u5207\u6362\u5230\u4e2d\u6587"}
             >
               <Languages size={16} aria-hidden="true" />
-              <span>{locale === "zh" ? "EN" : "中"}</span>
+              <span>{locale === "zh" ? "EN" : "\u4e2d"}</span>
             </button>
           </div>
         </div>
       </header>
 
-      <nav className="directory-bar" aria-label="目录">
+      {statsOpen ? (
+        <section className="panel stats-history-panel">
+          <div className="result-head">
+            <strong>{locale === "zh" ? "\u7ec3\u4e60\u8bb0\u5f55" : "Practice history"}</strong>
+            <button
+              type="button"
+              className="icon-button small"
+              onClick={() => setStatsOpen(false)}
+              aria-label={locale === "zh" ? "\u5173\u95ed" : "Close"}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="stats-history-grid">
+            <PracticeHistoryTable
+              title={locale === "zh" ? "\u6309\u65e5" : "Daily"}
+              rows={practiceHistory.daily}
+            />
+            <PracticeHistoryTable
+              title={locale === "zh" ? "\u6309\u5468" : "Weekly"}
+              rows={practiceHistory.weekly}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      <nav className="directory-bar" aria-label={locale === "zh" ? "\u76ee\u5f55" : "Navigation"}>
         <button
           type="button"
           className={view === "practice" ? "active" : ""}
@@ -1709,31 +1797,33 @@ export default function Home() {
             </label>
             <label>
               <span>{copy.timeClass}</span>
-              <select
-                value={practiceTimeClass}
-                onChange={(event) => setPracticeTimeClass(event.target.value)}
-              >
-                <option value="all">{copy.all}</option>
-                <option value="">{copy.unknown}</option>
-                <option value="bullet">{copy.bullet}</option>
-                <option value="blitz">{copy.blitz}</option>
-                <option value="rapid">{copy.rapid}</option>
-                <option value="classical">{copy.classical}</option>
-                <option value="correspondence">{copy.correspondence}</option>
-              </select>
+              <div className="multi-filter-grid">
+                {TIME_CLASS_FILTERS.map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={practiceTimeClasses.includes(value) ? "active" : ""}
+                    onClick={() => toggleFilterValue(value, setPracticeTimeClasses)}
+                  >
+                    {timeClassLabel(value)}
+                  </button>
+                ))}
+              </div>
             </label>
             <label>
               <span>{copy.source}</span>
-              <select
-                value={practiceSource}
-                onChange={(event) => setPracticeSource(event.target.value)}
-              >
-                <option value="all">{copy.all}</option>
-                <option value="pgn">{copy.pgn}</option>
-                <option value="chesscom">{copy.chesscom}</option>
-                <option value="lichess">{copy.lichess}</option>
-                <option value="fide">{copy.fide}</option>
-              </select>
+              <div className="multi-filter-grid">
+                {SOURCE_FILTERS.map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={practiceSources.includes(value) ? "active" : ""}
+                    onClick={() => toggleFilterValue(value, setPracticeSources)}
+                  >
+                    {sourceLabel(value)}
+                  </button>
+                ))}
+              </div>
             </label>
           </div>
 
@@ -2152,6 +2242,18 @@ function AnalysisPanel({
     try {
       const next = new Chess(fen);
       const move = next.move({ from, to, promotion: "q" });
+      const existingMoveIndex = nodes.findIndex(
+        (node) =>
+          node.parentIndex === currentIndex &&
+          node.from === move.from &&
+          node.to === move.to
+      );
+      if (existingMoveIndex >= 0) {
+        setCurrentIndex(existingMoveIndex);
+        setSelectedSquare(null);
+        return;
+      }
+
       const fullMove = Number(fen.split(/\s+/)[5] ?? "1") || 1;
       const existingContinuation = nodes.some(
         (node) =>
@@ -2342,7 +2444,15 @@ function AnalysisPanel({
         <div className="analysis-layout">
           <div className="analysis-board-zone">
             <div className="eval-with-board">
-              <div className="eval-bar" aria-label="evaluation bar">
+              <div
+                className={[
+                  "eval-bar",
+                  boardOrientation === "b" ? "black-bottom" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label="evaluation bar"
+              >
                 <div style={{ height: `${evalPercent(scoreCp)}%` }} />
                 <span>{signedScoreLabel(scoreCp)}</span>
               </div>
@@ -2372,11 +2482,17 @@ function AnalysisPanel({
               <div className="engine-lines">
                 {engineLines.length ? (
                   engineLines.map((line) => (
-                    <div key={`${line.multipv}-${line.bestMove}`}>
+                    <button
+                      type="button"
+                      key={`${line.multipv}-${line.bestMove}`}
+                      onClick={() =>
+                        makeMove(line.bestMove.slice(0, 2), line.bestMove.slice(2, 4))
+                      }
+                    >
                       <span>#{line.multipv}</span>
                       <strong>{uciToSan(fen, line.bestMove)}</strong>
                       <small>{signedScoreLabel(line.scoreCp)} · d{line.depth ?? searchDepth}</small>
-                    </div>
+                    </button>
                   ))
                 ) : (
                   <p>{copy.loadingEngine}</p>
@@ -2461,11 +2577,58 @@ function AnalysisPanel({
   );
 }
 
-function Stat({ label, value }: { label: string; value: number | string }) {
+function PracticeHistoryTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: PracticeHistoryRow[];
+}) {
   return (
-    <div className="stat">
+    <div className="practice-history-table">
+      <strong>{title}</strong>
+      {rows.length ? (
+        rows.map((row) => (
+          <div key={row.period}>
+            <span>{row.period}</span>
+            <span>{row.attempts}</span>
+            <b>{improvementScoreLabel(row.improvement)}</b>
+          </div>
+        ))
+      ) : (
+        <p>--</p>
+      )}
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value: number | string;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
       <span>{label}</span>
       <strong>{value}</strong>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" className="stat stat-button" onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="stat">
+      {content}
     </div>
   );
 }
