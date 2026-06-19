@@ -103,6 +103,39 @@ npm run lint
 npm run db:generate
 ```
 
+## Git 推送认证修复
+
+如果 `git push origin main` 报错：
+
+```text
+remote: Invalid username or token. Password authentication is not supported for Git operations.
+fatal: Authentication failed for 'https://github.com/aiolosluf/chess.git/'
+```
+
+说明这台电脑缓存了失效的 GitHub HTTPS 凭据。成功处理步骤是在 PowerShell 里先清掉 `github.com` 的旧凭据，再重新 push：
+
+```powershell
+$inputText = "protocol=https`nhost=github.com`n`n"
+$inputText | git credential reject
+git push origin main
+```
+
+如果这台电脑没有系统 Git，而是用便携版 Git，把 `git` 换成实际的 `git.exe` 路径：
+
+```powershell
+$git = "C:\path\to\PortableGit\cmd\git.exe"
+$inputText = "protocol=https`nhost=github.com`n`n"
+$inputText | & $git credential reject
+& $git push origin main
+```
+
+成功时会看到类似：
+
+```text
+To https://github.com/aiolosluf/chess.git
+   oldsha..newsha  main -> main
+```
+
 ## 清空本地测试数据
 
 开发环境可以调用：
