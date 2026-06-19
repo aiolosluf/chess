@@ -19,6 +19,13 @@ type Locale = "zh" | "en";
 type Platform = "chesscom" | "lichess" | "fide";
 type Severity = "inaccuracy" | "mistake" | "blunder";
 
+type AccountSettings = {
+  chessComUsername: string;
+  lichessUsername: string;
+  fideId: string;
+  fideName: string;
+};
+
 type ImportedGame = {
   id: number;
   sourcePlatform: Platform;
@@ -350,12 +357,23 @@ function platformLabel(platform: Platform) {
   return "FIDE";
 }
 
+function normalizeSettings(settings?: Partial<AccountSettings>): AccountSettings {
+  return {
+    chessComUsername: settings?.chessComUsername ?? "",
+    lichessUsername: settings?.lichessUsername ?? "",
+    fideId: settings?.fideId ?? "",
+    fideName: settings?.fideName ?? "",
+  };
+}
+
 export default function SettingsPage() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [chessComUsername, setChessComUsername] = useState("");
   const [lichessUsername, setLichessUsername] = useState("");
   const [fideId, setFideId] = useState("");
-  const [fideName, setFideName] = useState("");
+  const [savedSettings, setSavedSettings] = useState<AccountSettings>(() =>
+    normalizeSettings()
+  );
   const [depth, setDepth] = useState(8);
   const batchSize = 12;
   const [isBusy, setIsBusy] = useState(false);
@@ -382,17 +400,13 @@ export default function SettingsPage() {
         throw new Error(await readJsonError(response));
       }
       const payload = (await response.json()) as {
-        settings?: {
-          chessComUsername?: string;
-          lichessUsername?: string;
-          fideId?: string;
-          fideName?: string;
-        };
+        settings?: Partial<AccountSettings>;
       };
-      setChessComUsername(payload.settings?.chessComUsername ?? "");
-      setLichessUsername(payload.settings?.lichessUsername ?? "");
-      setFideId(payload.settings?.fideId ?? "");
-      setFideName(payload.settings?.fideName ?? "");
+      const settings = normalizeSettings(payload.settings);
+      setSavedSettings(settings);
+      setChessComUsername(settings.chessComUsername);
+      setLichessUsername(settings.lichessUsername);
+      setFideId(settings.fideId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.loadFailed);
     }
@@ -450,22 +464,35 @@ export default function SettingsPage() {
     fideName?: string;
   }) {
     setMessage("");
-    const nextChessComUsername = next?.chessComUsername ?? chessComUsername;
-    const nextLichessUsername = next?.lichessUsername ?? lichessUsername;
-    const nextFideId = next?.fideId ?? fideId;
-    const nextFideName = next?.fideName ?? fideName;
+    const nextSettings = normalizeSettings({
+      chessComUsername:
+        next?.chessComUsername ?? savedSettings.chessComUsername,
+      lichessUsername:
+        next?.lichessUsername ?? savedSettings.lichessUsername,
+      fideId: next?.fideId ?? savedSettings.fideId,
+      fideName: next?.fideName ?? savedSettings.fideName,
+    });
     const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chessComUsername: nextChessComUsername,
-        lichessUsername: nextLichessUsername,
-        fideId: nextFideId,
-        fideName: nextFideName,
-      }),
+      body: JSON.stringify(nextSettings),
     });
     if (!response.ok) {
       throw new Error(await readJsonError(response));
+    }
+    const payload = (await response.json()) as {
+      settings?: Partial<AccountSettings>;
+    };
+    const settings = normalizeSettings(payload.settings ?? nextSettings);
+    setSavedSettings(settings);
+    if (next?.chessComUsername !== undefined) {
+      setChessComUsername(settings.chessComUsername);
+    }
+    if (next?.lichessUsername !== undefined) {
+      setLichessUsername(settings.lichessUsername);
+    }
+    if (next?.fideId !== undefined) {
+      setFideId(settings.fideId);
     }
     setMessage(copy.saved);
   }
@@ -505,7 +532,6 @@ export default function SettingsPage() {
         await saveSettings({ lichessUsername: payload.username ?? username });
       } else {
         setFideId(payload.username ?? username);
-        setFideName(payload.displayName ?? "");
         await saveSettings({
           fideId: payload.username ?? username,
           fideName: payload.displayName ?? "",
@@ -526,7 +552,9 @@ export default function SettingsPage() {
     }
 
     const username =
-      platform === "chesscom" ? chessComUsername.trim() : lichessUsername.trim();
+      platform === "chesscom"
+        ? savedSettings.chessComUsername.trim()
+        : savedSettings.lichessUsername.trim();
     if (!username) {
       setMessage(copy.noUsername);
       return;
@@ -557,7 +585,9 @@ export default function SettingsPage() {
     }
 
     const username =
-      platform === "chesscom" ? chessComUsername.trim() : lichessUsername.trim();
+      platform === "chesscom"
+        ? savedSettings.chessComUsername.trim()
+        : savedSettings.lichessUsername.trim();
     if (!username) {
       setMessage(copy.noUsername);
       return;
@@ -771,10 +801,10 @@ export default function SettingsPage() {
   async function unbindAccount(platform: Platform) {
     const username =
       platform === "chesscom"
-        ? chessComUsername
+        ? savedSettings.chessComUsername
         : platform === "lichess"
-        ? lichessUsername
-        : fideId;
+        ? savedSettings.lichessUsername
+        : savedSettings.fideId;
     if (!username) {
       return;
     }
@@ -797,11 +827,17 @@ export default function SettingsPage() {
 
       if (platform === "chesscom") {
         setChessComUsername("");
+        setSavedSettings((current) => ({ ...current, chessComUsername: "" }));
       } else if (platform === "lichess") {
         setLichessUsername("");
+        setSavedSettings((current) => ({ ...current, lichessUsername: "" }));
       } else {
         setFideId("");
-        setFideName("");
+        setSavedSettings((current) => ({
+          ...current,
+          fideId: "",
+          fideName: "",
+        }));
       }
       await loadSettings();
       await loadGameStats();
@@ -883,7 +919,8 @@ export default function SettingsPage() {
           label={copy.chesscom}
           platform="chesscom"
           value={chessComUsername}
-          displayName={chessComUsername}
+          boundValue={savedSettings.chessComUsername}
+          displayName={savedSettings.chessComUsername}
           stats={stats.chesscom}
           progress={progress.chesscom}
           disabled={isBusy}
@@ -898,7 +935,8 @@ export default function SettingsPage() {
           label={copy.lichess}
           platform="lichess"
           value={lichessUsername}
-          displayName={lichessUsername}
+          boundValue={savedSettings.lichessUsername}
+          displayName={savedSettings.lichessUsername}
           stats={stats.lichess}
           progress={progress.lichess}
           disabled={isBusy}
@@ -913,7 +951,8 @@ export default function SettingsPage() {
           label={copy.fide}
           platform="fide"
           value={fideId}
-          displayName={fideName || fideId}
+          boundValue={savedSettings.fideId}
+          displayName={savedSettings.fideName || savedSettings.fideId}
           stats={stats.fide}
           progress={progress.fide}
           disabled={isBusy}
@@ -978,6 +1017,7 @@ function AccountPanel({
   label,
   platform,
   value,
+  boundValue,
   displayName,
   stats,
   progress,
@@ -992,6 +1032,7 @@ function AccountPanel({
   label: string;
   platform: Platform;
   value: string;
+  boundValue: string;
   displayName: string;
   stats: { total: number; pending: number };
   progress: { games: number; puzzles: number };
@@ -1003,7 +1044,7 @@ function AccountPanel({
   onImport: (platform: Platform) => void;
   onUnbind: (platform: Platform) => void;
 }) {
-  const isBound = Boolean(value.trim());
+  const isBound = Boolean(boundValue.trim());
 
   return (
     <div className="panel settings-panel">
