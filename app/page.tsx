@@ -74,6 +74,7 @@ type AnalysisResult = {
   bestMoveUci: string;
   lossCp: number;
   severity: Severity;
+  analysisDepth: number;
 };
 
 type PuzzleRecord = AnalysisResult & {
@@ -1187,6 +1188,7 @@ export default function Home() {
             bestMoveUci,
             lossCp,
             severity,
+            analysisDepth: depth,
           });
 
           setAnalysisResults([...found]);
@@ -1622,7 +1624,7 @@ export default function Home() {
                 value={depth}
                 onChange={(event) => setDepth(Number(event.target.value))}
               >
-                {[8, 10, 12, 14].map((value) => (
+                {[8, 10, 12, 14, 16, 18].map((value) => (
                   <option value={value} key={value}>
                     {value}
                   </option>
@@ -1797,33 +1799,25 @@ export default function Home() {
             </label>
             <label>
               <span>{copy.timeClass}</span>
-              <div className="multi-filter-grid">
-                {TIME_CLASS_FILTERS.map((value) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={practiceTimeClasses.includes(value) ? "active" : ""}
-                    onClick={() => toggleFilterValue(value, setPracticeTimeClasses)}
-                  >
-                    {timeClassLabel(value)}
-                  </button>
-                ))}
-              </div>
+              <MultiSelectDropdown
+                allLabel={copy.all}
+                values={TIME_CLASS_FILTERS}
+                selected={practiceTimeClasses}
+                labelForValue={timeClassLabel}
+                onToggle={(value) =>
+                  toggleFilterValue(value, setPracticeTimeClasses)
+                }
+              />
             </label>
             <label>
               <span>{copy.source}</span>
-              <div className="multi-filter-grid">
-                {SOURCE_FILTERS.map((value) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={practiceSources.includes(value) ? "active" : ""}
-                    onClick={() => toggleFilterValue(value, setPracticeSources)}
-                  >
-                    {sourceLabel(value)}
-                  </button>
-                ))}
-              </div>
+              <MultiSelectDropdown
+                allLabel={copy.all}
+                values={SOURCE_FILTERS}
+                selected={practiceSources}
+                labelForValue={sourceLabel}
+                onToggle={(value) => toggleFilterValue(value, setPracticeSources)}
+              />
             </label>
           </div>
 
@@ -2574,6 +2568,42 @@ function AnalysisPanel({
         </div>
       </section>
     </div>
+  );
+}
+
+function MultiSelectDropdown({
+  allLabel,
+  values,
+  selected,
+  labelForValue,
+  onToggle,
+}: {
+  allLabel: string;
+  values: string[];
+  selected: string[];
+  labelForValue: (value: string) => string;
+  onToggle: (value: string) => void;
+}) {
+  const summary = selected.length
+    ? selected.map(labelForValue).join(", ")
+    : allLabel;
+
+  return (
+    <details className="multi-select-dropdown">
+      <summary>{summary}</summary>
+      <div>
+        {values.map((value) => (
+          <label key={value}>
+            <input
+              type="checkbox"
+              checked={selected.includes(value)}
+              onChange={() => onToggle(value)}
+            />
+            <span>{labelForValue(value)}</span>
+          </label>
+        ))}
+      </div>
+    </details>
   );
 }
 

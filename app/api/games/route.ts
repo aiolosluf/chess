@@ -46,6 +46,12 @@ export async function GET(request: Request) {
           played_at AS playedAt,
           user_side AS userSide,
           time_class AS timeClass,
+          analysis_depth AS analysisDepth,
+          (
+            SELECT COUNT(*)
+            FROM puzzles
+            WHERE puzzles.source_game_id = games.id
+          ) AS puzzleCount,
           puzzle_generated_at AS puzzleGeneratedAt
         FROM games
         ${where}
@@ -71,10 +77,17 @@ export async function GET(request: Request) {
         `SELECT
           COUNT(*) AS total,
           COALESCE(SUM(CASE WHEN puzzle_generated_at IS NULL THEN 1 ELSE 0 END), 0) AS pending
+          ,COALESCE(MAX(played_at), '') AS latestPlayedAt,
+          (
+            SELECT COUNT(*)
+            FROM puzzles
+            WHERE ${platform ? "puzzles.source_platform = ?" : "1 = 1"}
+              AND ${username ? "lower(puzzles.source_username) = lower(?)" : "1 = 1"}
+          ) AS puzzleCount
         FROM games`
         + ` ${statsWhere}`
       )
-      .bind(...filteredStatsValues)
+      .bind(...filteredStatsValues, ...filteredStatsValues)
       .first();
 
     return Response.json({

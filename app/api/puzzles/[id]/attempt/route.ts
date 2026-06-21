@@ -22,11 +22,17 @@ export async function POST(request: Request) {
     }
 
     const db = await getPuzzleD1();
-    const before = await db
-      .prepare("SELECT attempts FROM puzzles WHERE id = ?")
+    const practicedToday = await db
+      .prepare(
+        `SELECT id
+        FROM practice_events
+        WHERE puzzle_id = ?
+          AND date(created_at) = date('now')
+        LIMIT 1`
+      )
       .bind(id)
-      .first<{ attempts?: number }>();
-    const isFirstAttempt = Number(before?.attempts ?? 0) === 0;
+      .first<{ id?: number }>();
+    const isFirstAttempt = !practicedToday;
     const improvementCp = Math.round(Number(payload.improvementCp ?? 0));
     await db
       .prepare(

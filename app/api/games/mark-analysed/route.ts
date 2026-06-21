@@ -3,6 +3,7 @@ import { routeErrorMessage } from "../../import-utils";
 
 type MarkPayload = {
   ids?: number[];
+  analysisDepth?: number;
 };
 
 export async function POST(request: Request) {
@@ -16,16 +17,22 @@ export async function POST(request: Request) {
       return Response.json({ marked: 0 });
     }
 
+    const analysisDepth = [8, 10, 12, 14, 16, 18].includes(
+      Number(payload.analysisDepth)
+    )
+      ? Number(payload.analysisDepth)
+      : 14;
     const db = await getPuzzleD1();
     await db.batch(
       ids.map((id) =>
         db
           .prepare(
             `UPDATE games
-            SET puzzle_generated_at = CURRENT_TIMESTAMP
+            SET puzzle_generated_at = CURRENT_TIMESTAMP,
+                analysis_depth = ?
             WHERE id = ?`
           )
-          .bind(id)
+          .bind(analysisDepth, id)
       )
     );
 

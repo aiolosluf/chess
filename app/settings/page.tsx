@@ -24,6 +24,7 @@ type AccountSettings = {
   lichessUsername: string;
   fideId: string;
   fideName: string;
+  analysisDepth: number;
 };
 
 type ImportedGame = {
@@ -39,6 +40,8 @@ type ImportedGame = {
   event: string;
   playedAt: string;
   timeClass: string;
+  analysisDepth: number;
+  puzzleCount: number;
   userSide: "w" | "b";
   puzzleGeneratedAt: string | null;
 };
@@ -81,6 +84,14 @@ type PuzzleCandidate = {
   bestMoveUci: string;
   lossCp: number;
   severity: Severity;
+  analysisDepth: number;
+};
+
+type PlatformStats = {
+  total: number;
+  pending: number;
+  latestPlayedAt: string;
+  puzzleCount: number;
 };
 
 const COPY = {
@@ -358,11 +369,15 @@ function platformLabel(platform: Platform) {
 }
 
 function normalizeSettings(settings?: Partial<AccountSettings>): AccountSettings {
+  const analysisDepth = Number(settings?.analysisDepth ?? 14);
   return {
     chessComUsername: settings?.chessComUsername ?? "",
     lichessUsername: settings?.lichessUsername ?? "",
     fideId: settings?.fideId ?? "",
     fideName: settings?.fideName ?? "",
+    analysisDepth: [8, 10, 12, 14, 16, 18].includes(analysisDepth)
+      ? analysisDepth
+      : 14,
   };
 }
 
@@ -374,14 +389,14 @@ export default function SettingsPage() {
   const [savedSettings, setSavedSettings] = useState<AccountSettings>(() =>
     normalizeSettings()
   );
-  const [depth, setDepth] = useState(8);
+  const [depth, setDepth] = useState(14);
   const batchSize = 12;
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState(COPY.zh.ready);
   const [stats, setStats] = useState({
-    chesscom: { total: 0, pending: 0 },
-    lichess: { total: 0, pending: 0 },
-    fide: { total: 0, pending: 0 },
+    chesscom: { total: 0, pending: 0, latestPlayedAt: "", puzzleCount: 0 },
+    lichess: { total: 0, pending: 0, latestPlayedAt: "", puzzleCount: 0 },
+    fide: { total: 0, pending: 0, latestPlayedAt: "", puzzleCount: 0 },
   });
   const [recentGames, setRecentGames] = useState<ImportedGame[]>([]);
   const [progress, setProgress] = useState({
@@ -407,6 +422,7 @@ export default function SettingsPage() {
       setChessComUsername(settings.chessComUsername);
       setLichessUsername(settings.lichessUsername);
       setFideId(settings.fideId);
+      setDepth(settings.analysisDepth);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.loadFailed);
     }
@@ -415,9 +431,9 @@ export default function SettingsPage() {
   const loadGameStats = useCallback(async () => {
     const platforms: Platform[] = ["chesscom", "lichess", "fide"];
     const nextStats = {
-      chesscom: { total: 0, pending: 0 },
-      lichess: { total: 0, pending: 0 },
-      fide: { total: 0, pending: 0 },
+      chesscom: { total: 0, pending: 0, latestPlayedAt: "", puzzleCount: 0 },
+      lichess: { total: 0, pending: 0, latestPlayedAt: "", puzzleCount: 0 },
+      fide: { total: 0, pending: 0, latestPlayedAt: "", puzzleCount: 0 },
     };
     let latestGames: ImportedGame[] = [];
 
@@ -427,17 +443,33 @@ export default function SettingsPage() {
         continue;
       }
       const payload = (await response.json()) as {
-        stats?: { total?: number; pending?: number };
+        stats?: Partial<PlatformStats>;
         games?: ImportedGame[];
       };
       nextStats[platform] = {
         total: Number(payload.stats?.total ?? 0),
         pending: Number(payload.stats?.pending ?? 0),
+        latestPlayedAt: String(payload.stats?.latestPlayedAt ?? ""),
+        puzzleCount: Number(payload.stats?.puzzleCount ?? 0),
       };
       latestGames = [...latestGames, ...(payload.games ?? [])];
     }
 
     setStats(nextStats);
+    setProgress({
+      chesscom: {
+        games: nextStats.chesscom.total - nextStats.chesscom.pending,
+        puzzles: nextStats.chesscom.puzzleCount,
+      },
+      lichess: {
+        games: nextStats.lichess.total - nextStats.lichess.pending,
+        puzzles: nextStats.lichess.puzzleCount,
+      },
+      fide: {
+        games: nextStats.fide.total - nextStats.fide.pending,
+        puzzles: nextStats.fide.puzzleCount,
+      },
+    });
     setRecentGames(
       latestGames
         .sort((a, b) => String(b.playedAt).localeCompare(String(a.playedAt)))
@@ -462,6 +494,7 @@ export default function SettingsPage() {
     lichessUsername?: string;
     fideId?: string;
     fideName?: string;
+    analysisDepth?: number;
   }) {
     setMessage("");
     const nextSettings = normalizeSettings({
@@ -471,6 +504,7 @@ export default function SettingsPage() {
         next?.lichessUsername ?? savedSettings.lichessUsername,
       fideId: next?.fideId ?? savedSettings.fideId,
       fideName: next?.fideName ?? savedSettings.fideName,
+      analysisDepth: next?.analysisDepth ?? depth,
     });
     const response = await fetch("/api/settings", {
       method: "POST",
@@ -494,6 +528,7 @@ export default function SettingsPage() {
     if (next?.fideId !== undefined) {
       setFideId(settings.fideId);
     }
+    setDepth(settings.analysisDepth);
     setMessage(copy.saved);
   }
 
@@ -718,10 +753,10 @@ export default function SettingsPage() {
           }));
         }
 
-        await fetch("/api/games/mark-analysed", {
+          await fetch("/api/games/mark-analysed", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ids: [game.id] }),
+          body: JSON.stringify({ ids: [game.id], analysisDepth: depth }),
         });
       }
     }
@@ -792,6 +827,7 @@ export default function SettingsPage() {
         bestMoveUci,
         lossCp,
         severity,
+        analysisDepth: depth,
       });
     }
 
@@ -893,9 +929,13 @@ export default function SettingsPage() {
               <span>{copy.depth}</span>
               <select
                 value={depth}
-                onChange={(event) => setDepth(Number(event.target.value))}
+                onChange={(event) => {
+                  const nextDepth = Number(event.target.value);
+                  setDepth(nextDepth);
+                  void saveSettings({ analysisDepth: nextDepth });
+                }}
               >
-                {[8, 10, 12, 14].map((value) => (
+                {[8, 10, 12, 14, 16, 18].map((value) => (
                   <option key={value} value={value}>
                     {value}
                   </option>
@@ -1034,7 +1074,7 @@ function AccountPanel({
   value: string;
   boundValue: string;
   displayName: string;
-  stats: { total: number; pending: number };
+  stats: PlatformStats;
   progress: { games: number; puzzles: number };
   disabled: boolean;
   copy: Record<string, string>;
@@ -1072,6 +1112,9 @@ function AccountPanel({
         <Stat label={copy.imported} value={progress.games} />
         <Stat label={copy.puzzles} value={progress.puzzles} />
       </div>
+      <small className="account-sync-date">
+        {copy.sync}: {stats.latestPlayedAt || "-"}
+      </small>
       <div className="action-row">
         {!isBound ? (
           <button

@@ -30,6 +30,7 @@ type IncomingPuzzle = {
   bestMoveUci?: string;
   lossCp?: number;
   severity?: string;
+  analysisDepth?: number;
 };
 
 function cleanText(value: unknown, fallback = "") {
@@ -78,6 +79,9 @@ async function ensureExtendedPuzzleColumns(db: D1Database) {
   if (!names.has("source_game_id")) {
     migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN source_game_id INTEGER"));
   }
+  if (!names.has("analysis_depth")) {
+    migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14"));
+  }
 
   if (migrations.length) {
     await db.batch(migrations);
@@ -122,6 +126,9 @@ function normalizePuzzle(puzzle: IncomingPuzzle) {
     bestMoveUci: cleanText(puzzle.bestMoveUci),
     lossCp: Math.round(Number(puzzle.lossCp)),
     severity: cleanText(puzzle.severity),
+    analysisDepth: [8, 10, 12, 14, 16, 18].includes(Number(puzzle.analysisDepth))
+      ? Number(puzzle.analysisDepth)
+      : 14,
   };
 
   normalized.dedupeKey ||= `${normalized.fenBefore}|${normalized.bestMoveUci}`;
@@ -206,6 +213,7 @@ function buildPuzzleFilters(request: Request) {
   const sourcePlatform = params.get("sourcePlatform") ?? "";
   const sourceUsername = params.get("sourceUsername") ?? "";
   const timeClass = params.get("timeClass") ?? "";
+  const sourceGameId = params.get("sourceGameId") ?? "";
   const from = params.get("from") || dateCutoff(params.get("range"));
   const to = params.get("to") ?? "";
 
@@ -214,6 +222,11 @@ function buildPuzzleFilters(request: Request) {
   if (sourceUsername) {
     filters.push("lower(source_username) = lower(?)");
     values.push(sourceUsername);
+  }
+
+  if (sourceGameId) {
+    filters.push("source_game_id = ?");
+    values.push(sourceGameId);
   }
 
   addMultiFilter(filters, values, "time_class", timeClass);
@@ -271,6 +284,7 @@ export async function GET(request: Request) {
           best_move_uci AS bestMoveUci,
           loss_cp AS lossCp,
           severity,
+          analysis_depth AS analysisDepth,
           attempts,
           solves,
           last_practiced_at AS lastPracticedAt
@@ -413,8 +427,9 @@ export async function POST(request: Request) {
         best_move_san,
         best_move_uci,
         loss_cp,
-        severity
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        severity,
+        analysis_depth
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     for (const puzzleChunk of chunks(uniquePuzzles, SQL_CHUNK_SIZE)) {
@@ -448,7 +463,8 @@ export async function POST(request: Request) {
             puzzle.bestMoveSan,
             puzzle.bestMoveUci,
             puzzle.lossCp,
-            puzzle.severity
+            puzzle.severity,
+            puzzle.analysisDepth
           )
         )
       );

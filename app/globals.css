@@ -601,6 +601,64 @@ input:focus {
   color: var(--green-strong);
 }
 
+.multi-select-dropdown {
+  position: relative;
+}
+
+.multi-select-dropdown summary {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 40px;
+  overflow: hidden;
+  padding: 0 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-select-dropdown[open] summary {
+  border-color: #8aae9a;
+}
+
+.multi-select-dropdown > div {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 14px 34px rgba(20, 45, 34, 0.14);
+  display: grid;
+  gap: 2px;
+  left: 0;
+  margin-top: 6px;
+  min-width: 100%;
+  padding: 6px;
+  position: absolute;
+  top: 100%;
+  z-index: 10;
+}
+
+.multi-select-dropdown label {
+  align-items: center;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+}
+
+.multi-select-dropdown label:hover {
+  background: #f2f6f2;
+}
+
+.multi-select-dropdown input {
+  accent-color: var(--green);
+}
+
 .board-wrap {
   margin: 0 auto;
   max-width: min(620px, 100%);
@@ -653,7 +711,10 @@ input:focus {
 
 .square span {
   cursor: grab;
-  font-size: clamp(26px, 6vw, 58px);
+  filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.28));
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Arial Unicode MS", sans-serif;
+  font-size: clamp(28px, 6vw, 60px);
+  font-weight: 400;
   line-height: 1;
   position: relative;
   z-index: 2;
@@ -666,25 +727,28 @@ input:focus {
 }
 
 .piece-w {
-  color: #fffdf2;
+  color: #f8f8f0;
   text-shadow:
-    0 2px 2px rgba(0, 0, 0, 0.7),
-    0 0 1px #111;
+    0 1px 0 rgba(255, 255, 255, 0.85),
+    0 2px 3px rgba(0, 0, 0, 0.72),
+    0 0 1px #1f2b23;
+  -webkit-text-stroke: 0.7px rgba(38, 48, 42, 0.62);
 }
 
 .piece-b {
-  color: #202020;
+  color: #202329;
   text-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.72),
-    0 0 1px rgba(255, 255, 255, 0.85);
+    0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 3px rgba(0, 0, 0, 0.18);
+  -webkit-text-stroke: 0.35px rgba(255, 255, 255, 0.28);
 }
 
 .square.light {
-  background: #eeeed2;
+  background: #ebecd0;
 }
 
 .square.dark {
-  background: #769656;
+  background: #739552;
 }
 
 .square.selected::after,
@@ -947,6 +1011,63 @@ input:focus {
   font-size: 12px;
 }
 
+.game-management-panel {
+  margin-bottom: 14px;
+}
+
+.game-list {
+  display: grid;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.game-row {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--foreground);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 64px;
+  padding: 8px;
+  text-align: left;
+}
+
+button.game-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.game-row.active {
+  background: var(--mint);
+  border-color: #8aae9a;
+}
+
+.game-row > button:first-child {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.game-row strong,
+.game-row span,
+.game-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-row small {
+  color: var(--muted);
+}
+
 .library-grid {
   display: grid;
   gap: 10px;
@@ -976,6 +1097,12 @@ input:focus {
 
 .settings-notice {
   margin-bottom: 0;
+}
+
+.account-sync-date {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
 }
 
 .settings-grid {

@@ -51,6 +51,20 @@ type PuzzleStats = {
   averageLoss: number;
 };
 
+type GameRecord = {
+  id: number;
+  sourcePlatform: string;
+  sourceUsername: string;
+  gameTitle: string;
+  white: string;
+  black: string;
+  playedAt: string;
+  timeClass: string;
+  analysisDepth: number;
+  puzzleCount: number;
+  puzzleGeneratedAt: string | null;
+};
+
 const COPY = {
   zh: {
     title: "题库管理",
@@ -189,6 +203,9 @@ export default function LibraryPage() {
     solves: 0,
     averageLoss: 0,
   });
+  const [games, setGames] = useState<GameRecord[]>([]);
+  const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
+  const [regenerateDepth, setRegenerateDepth] = useState(14);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
@@ -219,6 +236,9 @@ export default function LibraryPage() {
       if (toDate) {
         params.set("to", toDate.replace(/-/g, "."));
       }
+      if (selectedGameId) {
+        params.set("sourceGameId", String(selectedGameId));
+      }
       const response = await fetch(`/api/puzzles?${params}`);
       if (!response.ok) {
         throw new Error(await readJsonError(response));
@@ -236,7 +256,20 @@ export default function LibraryPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [copy.loadFailed, fromDate, sourceFilter, timeClassFilter, toDate]);
+  }, [copy.loadFailed, fromDate, selectedGameId, sourceFilter, timeClassFilter, toDate]);
+
+  const loadGames = useCallback(async () => {
+    try {
+      const response = await fetch("/api/games?limit=50");
+      if (!response.ok) {
+        throw new Error(await readJsonError(response));
+      }
+      const payload = (await response.json()) as { games?: GameRecord[] };
+      setGames(payload.games ?? []);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : copy.loadFailed);
+    }
+  }, [copy.loadFailed]);
 
   async function deletePuzzle(id: number) {
     if (!window.confirm(copy.confirmDelete)) {
@@ -253,6 +286,7 @@ export default function LibraryPage() {
       }
 
       await loadPuzzles();
+      await loadGames();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.deleteFailed);
     } finally {
@@ -276,6 +310,29 @@ export default function LibraryPage() {
         throw new Error(await readJsonError(response));
       }
       await loadPuzzles();
+      await loadGames();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : copy.deleteFailed);
+    }
+  }
+
+  async function regenerateGame(game: GameRecord) {
+    if (!window.confirm(copy.confirmDelete)) {
+      return;
+    }
+
+    setMessage("");
+    try {
+      const response = await fetch("/api/games/regenerate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: game.id, analysisDepth: regenerateDepth }),
+      });
+      if (!response.ok) {
+        throw new Error(await readJsonError(response));
+      }
+      await loadGames();
+      await loadPuzzles();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.deleteFailed);
     }
@@ -283,18 +340,23 @@ export default function LibraryPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      void loadGames();
       void loadPuzzles();
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [loadPuzzles]);
+  }, [loadGames, loadPuzzles]);
+
+  const pageTitle =
+    locale === "zh" ? "棋局及题目管理" : "Game and Puzzle Management";
+  const selectedGame = games.find((game) => game.id === selectedGameId) ?? null;
 
   return (
     <main className="app-shell library-page">
       <header className="topbar library-header">
         <div>
           <p className="eyebrow">Stockfish PGN Trainer</p>
-          <h1>{copy.title}</h1>
+          <h1>{pageTitle}</h1>
           <p className="library-subtitle">{copy.subtitle}</p>
         </div>
         <div className="top-buttons">
@@ -331,9 +393,86 @@ export default function LibraryPage() {
         <Stat label={copy.averageLoss} value={lossScoreLabel(stats.averageLoss)} />
       </section>
 
+      <section className="panel library-panel game-management-panel">
+        <div className="result-head">
+          <strong>{locale === "zh" ? "棋局记录" : "Games"}</strong>
+          <div className="library-actions">
+            <select
+              value={regenerateDepth}
+              onChange={(event) => setRegenerateDepth(Number(event.target.value))}
+              aria-label="analysis depth"
+            >
+              {[8, 10, 12, 14, 16, 18].map((value) => (
+                <option key={value} value={value}>
+                  d{value}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => void loadGames()}
+            >
+              <RefreshCw size={16} aria-hidden="true" />
+              {copy.refresh}
+            </button>
+          </div>
+        </div>
+
+        {games.length ? (
+          <div className="game-list">
+            <button
+              type="button"
+              className={`game-row ${selectedGameId === null ? "active" : ""}`}
+              onClick={() => setSelectedGameId(null)}
+            >
+              <strong>{copy.all}</strong>
+              <span>{games.length}</span>
+              <small>{locale === "zh" ? "显示全部题目" : "Show all puzzles"}</small>
+            </button>
+            {games.map((game) => (
+              <article
+                className={`game-row ${selectedGameId === game.id ? "active" : ""}`}
+                key={game.id}
+              >
+                <button type="button" onClick={() => setSelectedGameId(game.id)}>
+                  <strong>{game.gameTitle}</strong>
+                  <span>
+                    {game.timeClass || "Unknown"} · {formatDate(game.playedAt, locale)}
+                  </span>
+                  <small>
+                    {game.sourcePlatform} / {game.sourceUsername || "PGN"} · d
+                    {game.analysisDepth} · {game.puzzleCount}{" "}
+                    {locale === "zh" ? "题" : "puzzles"}
+                  </small>
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void regenerateGame(game)}
+                >
+                  {locale === "zh" ? "按新深度重排" : "Queue new depth"}
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <Database size={20} aria-hidden="true" />
+            {copy.empty}
+          </div>
+        )}
+      </section>
+
       <section className="panel library-panel">
         <div className="result-head">
-          <strong>{copy.title}</strong>
+          <strong>
+            {selectedGame
+              ? `${locale === "zh" ? "当前棋局题目" : "Puzzles for"}: ${
+                  selectedGame.gameTitle
+                }`
+              : copy.title}
+          </strong>
           <div className="library-actions">
             <button
               type="button"

@@ -54,6 +54,7 @@ async function ensurePuzzleSchema(db: D1Database) {
       best_move_uci TEXT NOT NULL,
       loss_cp INTEGER NOT NULL,
       severity TEXT NOT NULL,
+      analysis_depth INTEGER NOT NULL DEFAULT 14,
       attempts INTEGER NOT NULL DEFAULT 0,
       solves INTEGER NOT NULL DEFAULT 0,
       last_practiced_at TEXT
@@ -84,6 +85,7 @@ async function ensurePuzzleSchema(db: D1Database) {
       played_at TEXT NOT NULL,
       user_side TEXT NOT NULL,
       time_class TEXT NOT NULL DEFAULT '',
+      analysis_depth INTEGER NOT NULL DEFAULT 14,
       puzzle_generated_at TEXT
     )`),
     db.prepare(
@@ -101,6 +103,7 @@ async function ensurePuzzleSchema(db: D1Database) {
       lichess_username TEXT NOT NULL DEFAULT '',
       fide_id TEXT NOT NULL DEFAULT '',
       fide_name TEXT NOT NULL DEFAULT '',
+      analysis_depth INTEGER NOT NULL DEFAULT 14,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS practice_events (
@@ -176,6 +179,12 @@ async function ensurePuzzleSchema(db: D1Database) {
     );
   }
 
+  if (!columnNames.has("analysis_depth")) {
+    migrations.push(
+      db.prepare("ALTER TABLE puzzles ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14")
+    );
+  }
+
   if (migrations.length) {
     await db.batch(migrations);
   }
@@ -211,6 +220,12 @@ async function ensurePuzzleSchema(db: D1Database) {
     );
   }
 
+  if (!settingsNames.has("analysis_depth")) {
+    settingsMigrations.push(
+      db.prepare("ALTER TABLE user_settings ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14")
+    );
+  }
+
   if (settingsMigrations.length) {
     await db.batch(settingsMigrations);
   }
@@ -235,5 +250,21 @@ async function ensurePuzzleSchema(db: D1Database) {
 
   if (practiceMigrations.length) {
     await db.batch(practiceMigrations);
+  }
+
+  const gameColumns = await db.prepare("PRAGMA table_info(games)").all();
+  const gameNames = new Set(
+    (gameColumns.results ?? []).map((column) => String(column.name))
+  );
+  const gameMigrations = [];
+
+  if (!gameNames.has("analysis_depth")) {
+    gameMigrations.push(
+      db.prepare("ALTER TABLE games ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14")
+    );
+  }
+
+  if (gameMigrations.length) {
+    await db.batch(gameMigrations);
   }
 }

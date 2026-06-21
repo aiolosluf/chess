@@ -120,6 +120,7 @@ export async function GET(request: Request) {
           best_move_uci AS bestMoveUci,
           loss_cp AS lossCp,
           severity,
+          analysis_depth AS analysisDepth,
           attempts,
           solves,
           last_practiced_at AS lastPracticedAt
