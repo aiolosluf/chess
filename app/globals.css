@@ -995,6 +995,10 @@ input:focus {
   gap: 8px;
 }
 
+.game-search-input {
+  min-width: min(280px, 45vw);
+}
+
 .library-filter-grid {
   display: grid;
   gap: 10px;
@@ -1030,14 +1034,15 @@ input:focus {
   color: var(--foreground);
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 64px;
-  padding: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  line-height: 1.35;
+  min-height: 78px;
+  padding: 10px;
   text-align: left;
 }
 
 button.game-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  justify-items: start;
 }
 
 .game-row.active {
@@ -1054,6 +1059,7 @@ button.game-row {
   min-width: 0;
   padding: 0;
   text-align: left;
+  width: 100%;
 }
 
 .game-row strong,
@@ -1606,6 +1612,11 @@ button.game-row {
 
   .library-actions {
     flex-direction: column;
+  }
+
+  .game-search-input {
+    min-width: 0;
+    width: 100%;
   }
 
   .settings-game-row {

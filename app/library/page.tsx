@@ -205,7 +205,7 @@ export default function LibraryPage() {
   });
   const [games, setGames] = useState<GameRecord[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
-  const [regenerateDepth, setRegenerateDepth] = useState(14);
+  const [gameSearch, setGameSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
@@ -260,7 +260,11 @@ export default function LibraryPage() {
 
   const loadGames = useCallback(async () => {
     try {
-      const response = await fetch("/api/games?limit=50");
+      const params = new URLSearchParams({ limit: "50" });
+      if (gameSearch.trim()) {
+        params.set("q", gameSearch.trim());
+      }
+      const response = await fetch(`/api/games?${params}`);
       if (!response.ok) {
         throw new Error(await readJsonError(response));
       }
@@ -269,7 +273,7 @@ export default function LibraryPage() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.loadFailed);
     }
-  }, [copy.loadFailed]);
+  }, [copy.loadFailed, gameSearch]);
 
   async function deletePuzzle(id: number) {
     if (!window.confirm(copy.confirmDelete)) {
@@ -311,28 +315,6 @@ export default function LibraryPage() {
       }
       await loadPuzzles();
       await loadGames();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : copy.deleteFailed);
-    }
-  }
-
-  async function regenerateGame(game: GameRecord) {
-    if (!window.confirm(copy.confirmDelete)) {
-      return;
-    }
-
-    setMessage("");
-    try {
-      const response = await fetch("/api/games/regenerate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: game.id, analysisDepth: regenerateDepth }),
-      });
-      if (!response.ok) {
-        throw new Error(await readJsonError(response));
-      }
-      await loadGames();
-      await loadPuzzles();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.deleteFailed);
     }
@@ -397,17 +379,12 @@ export default function LibraryPage() {
         <div className="result-head">
           <strong>{locale === "zh" ? "棋局记录" : "Games"}</strong>
           <div className="library-actions">
-            <select
-              value={regenerateDepth}
-              onChange={(event) => setRegenerateDepth(Number(event.target.value))}
-              aria-label="analysis depth"
-            >
-              {[8, 10, 12, 14, 16, 18].map((value) => (
-                <option key={value} value={value}>
-                  d{value}
-                </option>
-              ))}
-            </select>
+            <input
+              className="game-search-input"
+              value={gameSearch}
+              onChange={(event) => setGameSearch(event.target.value)}
+              placeholder={locale === "zh" ? "搜索棋手、账号或棋局" : "Search games"}
+            />
             <button
               type="button"
               className="secondary-button"
@@ -445,13 +422,6 @@ export default function LibraryPage() {
                     {game.analysisDepth} · {game.puzzleCount}{" "}
                     {locale === "zh" ? "题" : "puzzles"}
                   </small>
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => void regenerateGame(game)}
-                >
-                  {locale === "zh" ? "按新深度重排" : "Queue new depth"}
                 </button>
               </article>
             ))}

@@ -32,7 +32,7 @@ export async function GET() {
         lichessUsername: "",
         fideId: "",
         fideName: "",
-        analysisDepth: 14,
+        analysisDepth: 18,
         updatedAt: "",
       },
     });
@@ -48,11 +48,7 @@ export async function POST(request: Request) {
     const lichessUsername = cleanUsername(payload.lichessUsername);
     const fideId = cleanUsername(payload.fideId);
     const fideName = cleanUsername(payload.fideName);
-    const analysisDepth = [8, 10, 12, 14, 16, 18].includes(
-      Number(payload.analysisDepth)
-    )
-      ? Number(payload.analysisDepth)
-      : 14;
+    const analysisDepth = 18;
     const db = await getPuzzleD1();
 
     await db

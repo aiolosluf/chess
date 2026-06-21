@@ -7,6 +7,7 @@ export async function GET(request: Request) {
     const status = params.get("status");
     const platform = params.get("platform") ?? "";
     const username = params.get("username") ?? "";
+    const query = params.get("q")?.trim() ?? "";
     const limit = Math.max(1, Math.min(50, Number(params.get("limit") ?? 20)));
     const db = await getPuzzleD1();
     const filters = [];
@@ -24,6 +25,17 @@ export async function GET(request: Request) {
     if (username) {
       filters.push("lower(source_username) = lower(?)");
       values.push(username);
+    }
+
+    if (query) {
+      filters.push(
+        `(lower(game_title) LIKE lower(?)
+          OR lower(white) LIKE lower(?)
+          OR lower(black) LIKE lower(?)
+          OR lower(source_username) LIKE lower(?)
+          OR lower(event) LIKE lower(?))`
+      );
+      values.push(...Array(5).fill(`%${query}%`));
     }
 
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
@@ -69,9 +81,19 @@ export async function GET(request: Request) {
     if (username) {
       filteredStatsValues.push(username);
     }
+    if (query) {
+      filteredStatsValues.push(...Array(5).fill(`%${query}%`));
+    }
     const statsWhere = statsFilters.length
       ? `WHERE ${statsFilters.join(" AND ")}`
       : "";
+    const puzzleStatsValues: (string | number)[] = [];
+    if (platform) {
+      puzzleStatsValues.push(platform);
+    }
+    if (username) {
+      puzzleStatsValues.push(username);
+    }
     const stats = await db
       .prepare(
         `SELECT
@@ -87,7 +109,7 @@ export async function GET(request: Request) {
         FROM games`
         + ` ${statsWhere}`
       )
-      .bind(...filteredStatsValues, ...filteredStatsValues)
+      .bind(...puzzleStatsValues, ...filteredStatsValues)
       .first();
 
     return Response.json({

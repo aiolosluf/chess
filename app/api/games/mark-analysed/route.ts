@@ -17,11 +17,7 @@ export async function POST(request: Request) {
       return Response.json({ marked: 0 });
     }
 
-    const analysisDepth = [8, 10, 12, 14, 16, 18].includes(
-      Number(payload.analysisDepth)
-    )
-      ? Number(payload.analysisDepth)
-      : 14;
+    const analysisDepth = 18;
     const db = await getPuzzleD1();
     await db.batch(
       ids.map((id) =>

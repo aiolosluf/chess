@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+﻿import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
@@ -54,7 +54,7 @@ async function ensurePuzzleSchema(db: D1Database) {
       best_move_uci TEXT NOT NULL,
       loss_cp INTEGER NOT NULL,
       severity TEXT NOT NULL,
-      analysis_depth INTEGER NOT NULL DEFAULT 14,
+      analysis_depth INTEGER NOT NULL DEFAULT 18,
       attempts INTEGER NOT NULL DEFAULT 0,
       solves INTEGER NOT NULL DEFAULT 0,
       last_practiced_at TEXT
@@ -85,7 +85,7 @@ async function ensurePuzzleSchema(db: D1Database) {
       played_at TEXT NOT NULL,
       user_side TEXT NOT NULL,
       time_class TEXT NOT NULL DEFAULT '',
-      analysis_depth INTEGER NOT NULL DEFAULT 14,
+      analysis_depth INTEGER NOT NULL DEFAULT 18,
       puzzle_generated_at TEXT
     )`),
     db.prepare(
@@ -103,7 +103,7 @@ async function ensurePuzzleSchema(db: D1Database) {
       lichess_username TEXT NOT NULL DEFAULT '',
       fide_id TEXT NOT NULL DEFAULT '',
       fide_name TEXT NOT NULL DEFAULT '',
-      analysis_depth INTEGER NOT NULL DEFAULT 14,
+      analysis_depth INTEGER NOT NULL DEFAULT 18,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS practice_events (
@@ -181,7 +181,7 @@ async function ensurePuzzleSchema(db: D1Database) {
 
   if (!columnNames.has("analysis_depth")) {
     migrations.push(
-      db.prepare("ALTER TABLE puzzles ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14")
+      db.prepare("ALTER TABLE puzzles ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 18")
     );
   }
 
@@ -222,7 +222,7 @@ async function ensurePuzzleSchema(db: D1Database) {
 
   if (!settingsNames.has("analysis_depth")) {
     settingsMigrations.push(
-      db.prepare("ALTER TABLE user_settings ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14")
+      db.prepare("ALTER TABLE user_settings ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 18")
     );
   }
 
@@ -260,7 +260,7 @@ async function ensurePuzzleSchema(db: D1Database) {
 
   if (!gameNames.has("analysis_depth")) {
     gameMigrations.push(
-      db.prepare("ALTER TABLE games ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14")
+      db.prepare("ALTER TABLE games ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 18")
     );
   }
 
@@ -268,3 +268,4 @@ async function ensurePuzzleSchema(db: D1Database) {
     await db.batch(gameMigrations);
   }
 }
+

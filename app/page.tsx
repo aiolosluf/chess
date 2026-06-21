@@ -143,6 +143,7 @@ type VariationLine = {
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const WORSE_MARGIN_CP = 15;
+const FIXED_ANALYSIS_DEPTH = 18;
 const PIECES: Record<string, string> = {
   wk: "♔",
   wq: "♕",
@@ -793,7 +794,7 @@ export default function Home() {
   const [parsedGames, setParsedGames] = useState<ParsedGame[]>([]);
   const [selectedGameIndex, setSelectedGameIndex] = useState(0);
   const [analyzeSide, setAnalyzeSide] = useState<AnalyzeSide>("both");
-  const [depth, setDepth] = useState(10);
+  const depth = FIXED_ANALYSIS_DEPTH;
   const [halfMoveLimit, setHalfMoveLimit] = useState("60");
   const [manualTimeClass, setManualTimeClass] = useState("");
   const [manualPlayedAt, setManualPlayedAt] = useState("");
@@ -1143,7 +1144,7 @@ export default function Home() {
         const before = await engineRef.current.analyzeFen(move.before, depth);
         const after = await engineRef.current.analyzeFen(
           move.after,
-          Math.max(6, depth - 1)
+          FIXED_ANALYSIS_DEPTH
         );
         const playedScore = -after.scoreCp;
         const rawLoss = before.scoreCp - playedScore;
@@ -1317,11 +1318,11 @@ export default function Home() {
       engineRef.current ??= new BrowserStockfish();
       const before = await engineRef.current.analyzeFen(
         puzzle.fenBefore,
-        Math.max(8, Math.min(depth, 12))
+        FIXED_ANALYSIS_DEPTH
       );
       const after = await engineRef.current.analyzeFen(
         chess.fen(),
-        Math.max(6, Math.min(depth - 1, 10))
+        FIXED_ANALYSIS_DEPTH
       );
       const userLoss = Math.round(
         Math.min(2000, Math.max(0, before.scoreCp - -after.scoreCp))
@@ -1615,20 +1616,6 @@ export default function Home() {
                 ) : (
                   <option>{copy.notLoaded}</option>
                 )}
-              </select>
-            </label>
-
-            <label>
-              <span>{copy.depth}</span>
-              <select
-                value={depth}
-                onChange={(event) => setDepth(Number(event.target.value))}
-              >
-                {[8, 10, 12, 14, 16, 18].map((value) => (
-                  <option value={value} key={value}>
-                    {value}
-                  </option>
-                ))}
               </select>
             </label>
 
@@ -2169,7 +2156,7 @@ function AnalysisPanel({
       setScoreCp(0);
       try {
         engineRef.current ??= new BrowserStockfish();
-        for (const depth of [6, 8, 10, 12, 14]) {
+        for (const depth of [FIXED_ANALYSIS_DEPTH]) {
           const result = await engineRef.current.analyzeFenLines(fen, depth, 3);
           if (cancelled) {
             return;

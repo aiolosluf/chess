@@ -9,7 +9,6 @@ import {
   Loader2,
   RefreshCw,
   Settings,
-  Square,
 } from "lucide-react";
 import Link from "next/link";
 import { Chess, type Move } from "chess.js";
@@ -182,6 +181,9 @@ const COPY = {
 } satisfies Record<Locale, Record<string, string>>;
 
 const WORSE_MARGIN_CP = 70;
+const FIXED_ANALYSIS_DEPTH = 18;
+const BATCH_SIZE = 12;
+let backgroundTask: Promise<void> | null = null;
 
 function parsePgnGame(pgn: string): ParsedGame | null {
   try {
@@ -369,15 +371,12 @@ function platformLabel(platform: Platform) {
 }
 
 function normalizeSettings(settings?: Partial<AccountSettings>): AccountSettings {
-  const analysisDepth = Number(settings?.analysisDepth ?? 14);
   return {
     chessComUsername: settings?.chessComUsername ?? "",
     lichessUsername: settings?.lichessUsername ?? "",
     fideId: settings?.fideId ?? "",
     fideName: settings?.fideName ?? "",
-    analysisDepth: [8, 10, 12, 14, 16, 18].includes(analysisDepth)
-      ? analysisDepth
-      : 14,
+    analysisDepth: FIXED_ANALYSIS_DEPTH,
   };
 }
 
@@ -389,8 +388,7 @@ export default function SettingsPage() {
   const [savedSettings, setSavedSettings] = useState<AccountSettings>(() =>
     normalizeSettings()
   );
-  const [depth, setDepth] = useState(14);
-  const batchSize = 12;
+  const depth = FIXED_ANALYSIS_DEPTH;
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState(COPY.zh.ready);
   const [stats, setStats] = useState({
@@ -422,7 +420,6 @@ export default function SettingsPage() {
       setChessComUsername(settings.chessComUsername);
       setLichessUsername(settings.lichessUsername);
       setFideId(settings.fideId);
-      setDepth(settings.analysisDepth);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.loadFailed);
     }
@@ -485,7 +482,6 @@ export default function SettingsPage() {
 
     return () => {
       window.clearTimeout(timer);
-      engineRef.current?.dispose();
     };
   }, [loadGameStats, loadSettings]);
 
@@ -504,7 +500,7 @@ export default function SettingsPage() {
         next?.lichessUsername ?? savedSettings.lichessUsername,
       fideId: next?.fideId ?? savedSettings.fideId,
       fideName: next?.fideName ?? savedSettings.fideName,
-      analysisDepth: next?.analysisDepth ?? depth,
+      analysisDepth: FIXED_ANALYSIS_DEPTH,
     });
     const response = await fetch("/api/settings", {
       method: "POST",
@@ -528,7 +524,6 @@ export default function SettingsPage() {
     if (next?.fideId !== undefined) {
       setFideId(settings.fideId);
     }
-    setDepth(settings.analysisDepth);
     setMessage(copy.saved);
   }
 
@@ -580,6 +575,30 @@ export default function SettingsPage() {
     }
   }
 
+  function runBackground(label: string, task: () => Promise<void>) {
+    if (backgroundTask) {
+      window.alert(locale === "zh" ? "后台任务已经在运行中" : "A background task is already running");
+      return;
+    }
+
+    setMessage(label);
+    window.alert(locale === "zh" ? "后台正在运行，可以继续使用其它页面。" : "Running in the background. You can keep using other pages.");
+    backgroundTask = task()
+      .then(async () => {
+        await loadGameStats();
+        setMessage(copy.done);
+        window.alert(locale === "zh" ? "后台任务已运行完。" : "Background task finished.");
+      })
+      .catch((error) => {
+        const text = error instanceof Error ? error.message : copy.loadFailed;
+        setMessage(text);
+        window.alert(text);
+      })
+      .finally(() => {
+        backgroundTask = null;
+      });
+  }
+
   async function importAndAnalyze(platform: Platform) {
     if (platform === "fide") {
       setMessage(copy.fideNoAuto);
@@ -595,22 +614,11 @@ export default function SettingsPage() {
       return;
     }
 
-    cancelRef.current = false;
-    setIsBusy(true);
-    setProgress((current) => ({
-      ...current,
-      [platform]: { games: 0, puzzles: 0 },
-    }));
-    try {
+    runBackground(`${platformLabel(platform)} ${copy.importAnalyze}`, async () => {
+      cancelRef.current = false;
       const importResult = await syncPlatformGames(platform, username);
       await analyzePending(platform, importResult.username);
-      await loadGameStats();
-      setMessage(copy.done);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : copy.loadFailed);
-    } finally {
-      setIsBusy(false);
-    }
+    });
   }
 
   async function syncOnly(platform: Platform) {
@@ -628,13 +636,8 @@ export default function SettingsPage() {
       return;
     }
 
-    cancelRef.current = false;
-    setIsBusy(true);
-    setProgress((current) => ({
-      ...current,
-      [platform]: { games: 0, puzzles: 0 },
-    }));
-    try {
+    runBackground(`${platformLabel(platform)} ${copy.sync}`, async () => {
+      cancelRef.current = false;
       const importResult = await syncPlatformGames(platform, username);
       await loadGameStats();
 
@@ -655,11 +658,7 @@ export default function SettingsPage() {
           `${platformLabel(platform)} ${copy.foundNew}: ${importResult.saved}`
         );
       }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : copy.loadFailed);
-    } finally {
-      setIsBusy(false);
-    }
+    });
   }
 
   async function syncPlatformGames(platform: Platform, username: string) {
@@ -706,7 +705,7 @@ export default function SettingsPage() {
       const pendingResponse = await fetch(
         `/api/games?status=pending&platform=${platform}&username=${encodeURIComponent(
           username
-        )}&limit=${batchSize}`
+        )}&limit=${BATCH_SIZE}`
       );
       if (!pendingResponse.ok) {
         throw new Error(await readJsonError(pendingResponse));
@@ -789,7 +788,7 @@ export default function SettingsPage() {
 
       const after = await engineRef.current.analyzeFen(
         move.after,
-        Math.max(6, depth - 1)
+        FIXED_ANALYSIS_DEPTH
       );
       const playedScore = -after.scoreCp;
       const lossCp = Math.round(Math.min(2000, Math.max(0, before.scoreCp - playedScore)));
@@ -924,26 +923,6 @@ export default function SettingsPage() {
             {message || copy.ready}
           </div>
 
-          <div className="settings-grid">
-            <label>
-              <span>{copy.depth}</span>
-              <select
-                value={depth}
-                onChange={(event) => {
-                  const nextDepth = Number(event.target.value);
-                  setDepth(nextDepth);
-                  void saveSettings({ analysisDepth: nextDepth });
-                }}
-              >
-                {[8, 10, 12, 14, 16, 18].map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
           <button
             type="button"
             className="secondary-button"
@@ -1004,20 +983,6 @@ export default function SettingsPage() {
           onUnbind={unbindAccount}
         />
       </section>
-
-      {isBusy ? (
-        <button
-          type="button"
-          className="secondary-button stop-import-button"
-          onClick={() => {
-            cancelRef.current = true;
-            setMessage(copy.stop);
-          }}
-        >
-          <Square size={16} aria-hidden="true" />
-          {copy.stop}
-        </button>
-      ) : null}
 
       <section className="panel settings-games-panel">
         <div className="result-head">

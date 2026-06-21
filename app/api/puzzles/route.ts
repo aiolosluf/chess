@@ -80,7 +80,7 @@ async function ensureExtendedPuzzleColumns(db: D1Database) {
     migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN source_game_id INTEGER"));
   }
   if (!names.has("analysis_depth")) {
-    migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 14"));
+    migrations.push(db.prepare("ALTER TABLE puzzles ADD COLUMN analysis_depth INTEGER NOT NULL DEFAULT 18"));
   }
 
   if (migrations.length) {
@@ -126,9 +126,7 @@ function normalizePuzzle(puzzle: IncomingPuzzle) {
     bestMoveUci: cleanText(puzzle.bestMoveUci),
     lossCp: Math.round(Number(puzzle.lossCp)),
     severity: cleanText(puzzle.severity),
-    analysisDepth: [8, 10, 12, 14, 16, 18].includes(Number(puzzle.analysisDepth))
-      ? Number(puzzle.analysisDepth)
-      : 14,
+    analysisDepth: 18,
   };
 
   normalized.dedupeKey ||= `${normalized.fenBefore}|${normalized.bestMoveUci}`;

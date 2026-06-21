@@ -34,7 +34,7 @@ export const puzzles = sqliteTable(
     bestMoveUci: text("best_move_uci").notNull(),
     lossCp: integer("loss_cp").notNull(),
     severity: text("severity").notNull(),
-    analysisDepth: integer("analysis_depth").notNull().default(14),
+    analysisDepth: integer("analysis_depth").notNull().default(18),
     attempts: integer("attempts").notNull().default(0),
     solves: integer("solves").notNull().default(0),
     lastPracticedAt: text("last_practiced_at"),
@@ -72,7 +72,7 @@ export const games = sqliteTable(
     playedAt: text("played_at").notNull(),
     userSide: text("user_side").notNull(),
     timeClass: text("time_class").notNull().default(""),
-    analysisDepth: integer("analysis_depth").notNull().default(14),
+    analysisDepth: integer("analysis_depth").notNull().default(18),
     puzzleGeneratedAt: text("puzzle_generated_at"),
   },
   (table) => [
@@ -88,7 +88,7 @@ export const userSettings = sqliteTable("user_settings", {
   lichessUsername: text("lichess_username").notNull().default(""),
   fideId: text("fide_id").notNull().default(""),
   fideName: text("fide_name").notNull().default(""),
-  analysisDepth: integer("analysis_depth").notNull().default(14),
+  analysisDepth: integer("analysis_depth").notNull().default(18),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
