@@ -731,13 +731,8 @@ function openingLabel(openingName: string, eco: string) {
     return "Unknown";
   }
 
-  const compact = (openingName || "Unknown")
-    .replace(/\bDefense\b/g, "")
-    .replace(/\bVariation\b/g, "")
-    .replace(/\s*:\s*/g, ", ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  return eco ? `${compact} (${eco})` : compact;
+  const name = (openingName || "Unknown").trim();
+  return eco ? `${name} (${eco})` : name;
 }
 
 function openingNameFromHeaders(headers: Record<string, string>) {
@@ -836,6 +831,40 @@ function analysisNodesFromPgn(pgn: string, fallbackFen: string): AnalysisNode[] 
       },
     ];
   }
+}
+
+function analysisPath(nodes: AnalysisNode[], index: number) {
+  const path: AnalysisNode[] = [];
+  const seen = new Set<number>();
+  let cursor = nodes[index] ? index : 0;
+
+  while (cursor >= 0 && !seen.has(cursor)) {
+    seen.add(cursor);
+    const node = nodes[cursor];
+    if (!node) {
+      break;
+    }
+    path.unshift(node);
+    cursor = node.parentIndex ?? -1;
+  }
+
+  return path;
+}
+
+function formatAnalysisPath(nodes: AnalysisNode[], index: number) {
+  const moves = analysisPath(nodes, index).filter((node) => node.san);
+
+  return moves
+    .map((node, offset) => {
+      const prefix =
+        node.color === "w"
+          ? `${node.moveNumber}. `
+          : offset === 0
+          ? `${node.moveNumber}... `
+          : "";
+      return `${prefix}${node.san}`;
+    })
+    .join(" ");
 }
 
 function asSquare(square: string) {
@@ -2012,26 +2041,22 @@ export default function Home() {
                 <option value="b">{sideLabels.b}</option>
               </select>
             </label>
-            <label className="opening-filter-field">
+            <div className="opening-filter-field filter-field">
               <span>{copy.opening}</span>
-              <input
-                value={openingSearch}
-                onChange={(event) => setOpeningSearch(event.target.value)}
-                placeholder={copy.openingSearch}
-              />
-              <MultiSelectDropdown
+              <OpeningPicker
                 allLabel={copy.all}
-                values={openingOptions.map((opening) =>
-                  openingValue(opening.openingName, opening.eco)
-                )}
+                searchLabel={copy.openingSearch}
+                searchValue={openingSearch}
+                options={openingOptions}
                 selected={practiceOpenings}
                 labelForValue={(value) => {
                   const [name, eco] = value.split("|");
                   return openingLabel(name, eco);
                 }}
+                onSearch={setOpeningSearch}
                 onToggle={(value) => toggleFilterValue(value, setPracticeOpenings)}
               />
-            </label>
+            </div>
           </div>
 
           <ChessBoard
@@ -2406,6 +2431,11 @@ function AnalysisPanel({
 
   const maxIndex = nodes.length - 1;
   const mainLastIndex = Math.max(0, mainNodes.length - 1);
+  const openingInfo = openingLabel(puzzle.openingName, puzzle.eco);
+  const currentLine = useMemo(
+    () => formatAnalysisPath(nodes, currentIndex),
+    [currentIndex, nodes]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -2664,6 +2694,15 @@ function AnalysisPanel({
           <div>
             <p className="eyebrow">{copy.engineAnalysis}</p>
             <h2>{puzzle.gameTitle}</h2>
+            <div className="analysis-opening">
+              <BookOpen size={16} aria-hidden="true" />
+              <div>
+                <span>
+                  {copy.opening}: {openingInfo}
+                </span>
+                {currentLine ? <small>{currentLine}</small> : null}
+              </div>
+            </div>
           </div>
           <div className="analysis-head-actions">
             <button
@@ -2850,6 +2889,76 @@ function MultiSelectDropdown({
             <span>{labelForValue(value)}</span>
           </label>
         ))}
+      </div>
+    </details>
+  );
+}
+
+function OpeningPicker({
+  allLabel,
+  searchLabel,
+  searchValue,
+  options,
+  selected,
+  labelForValue,
+  onSearch,
+  onToggle,
+}: {
+  allLabel: string;
+  searchLabel: string;
+  searchValue: string;
+  options: OpeningOption[];
+  selected: string[];
+  labelForValue: (value: string) => string;
+  onSearch: (value: string) => void;
+  onToggle: (value: string) => void;
+}) {
+  const optionValues = options.map((opening) =>
+    openingValue(opening.openingName, opening.eco)
+  );
+  const values = Array.from(new Set([...selected, ...optionValues]));
+  const summary = selected.length
+    ? selected.map(labelForValue).join(", ")
+    : allLabel;
+
+  return (
+    <details className="opening-picker">
+      <summary>{summary}</summary>
+      <div className="opening-picker-panel">
+        <label className="opening-search-row">
+          <Search size={16} aria-hidden="true" />
+          <input
+            value={searchValue}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder={searchLabel}
+          />
+        </label>
+        {selected.length ? (
+          <div className="opening-chip-list">
+            {selected.map((value) => (
+              <button type="button" key={value} onClick={() => onToggle(value)}>
+                <span>{labelForValue(value)}</span>
+                <X size={13} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="opening-option-list">
+          {values.length ? (
+            values.map((value) => (
+              <label key={value}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(value)}
+                  onChange={() => onToggle(value)}
+                />
+                <span>{labelForValue(value)}</span>
+              </label>
+            ))
+          ) : (
+            <p>{allLabel}</p>
+          )}
+        </div>
       </div>
     </details>
   );

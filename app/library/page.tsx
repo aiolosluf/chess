@@ -195,13 +195,8 @@ function openingLabel(openingName: string, eco: string) {
     return "Unknown";
   }
 
-  const compact = (openingName || "Unknown")
-    .replace(/\bDefense\b/g, "")
-    .replace(/\bVariation\b/g, "")
-    .replace(/\s*:\s*/g, ", ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  return eco ? `${compact} (${eco})` : compact;
+  const name = (openingName || "Unknown").trim();
+  return eco ? `${name} (${eco})` : name;
 }
 
 function openingLabelForGame(game: GameRecord) {
@@ -456,7 +451,13 @@ export default function LibraryPage() {
             </button>
             {games.map((game) => (
               <article
-                className={`game-row ${selectedGameId === game.id ? "active" : ""}`}
+                className={[
+                  "game-row",
+                  selectedGameId === game.id ? "active" : "",
+                  selectedGameId === game.id ? "has-action" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 key={game.id}
               >
                 <button type="button" onClick={() => setSelectedGameId(game.id)}>
