@@ -2,6 +2,7 @@ import { getPuzzleD1 } from "@/db";
 
 const PUZZLE_API_SCHEMA_VERSION = 3;
 const SQL_CHUNK_SIZE = 80;
+const MIN_PUZZLE_IMPROVEMENT_CP = 100;
 
 type IncomingPuzzle = {
   dedupeKey?: string;
@@ -17,6 +18,8 @@ type IncomingPuzzle = {
   event?: string;
   playedAt?: string;
   timeClass?: string;
+  openingName?: string;
+  eco?: string;
   moveNumber?: number;
   ply?: number;
   side?: string;
@@ -113,6 +116,8 @@ function normalizePuzzle(puzzle: IncomingPuzzle) {
     event: cleanText(puzzle.event, "Training"),
     playedAt: cleanText(puzzle.playedAt, ""),
     timeClass: cleanText(puzzle.timeClass),
+    openingName: cleanText(puzzle.openingName),
+    eco: cleanText(puzzle.eco),
     moveNumber: Number(puzzle.moveNumber),
     ply: Number(puzzle.ply),
     side: cleanText(puzzle.side),
@@ -138,7 +143,8 @@ function normalizePuzzle(puzzle: IncomingPuzzle) {
     !normalized.bestMoveUci ||
     !Number.isFinite(normalized.moveNumber) ||
     !Number.isFinite(normalized.ply) ||
-    !Number.isFinite(normalized.lossCp)
+    !Number.isFinite(normalized.lossCp) ||
+    normalized.lossCp <= MIN_PUZZLE_IMPROVEMENT_CP
   ) {
     return null;
   }
@@ -212,6 +218,8 @@ function buildPuzzleFilters(request: Request) {
   const sourceUsername = params.get("sourceUsername") ?? "";
   const timeClass = params.get("timeClass") ?? "";
   const sourceGameId = params.get("sourceGameId") ?? "";
+  const side = params.get("side") ?? "";
+  const openings = params.get("openings") ?? "";
   const from = params.get("from") || dateCutoff(params.get("range"));
   const to = params.get("to") ?? "";
 
@@ -226,6 +234,13 @@ function buildPuzzleFilters(request: Request) {
     filters.push("source_game_id = ?");
     values.push(sourceGameId);
   }
+
+  if (side === "w" || side === "b") {
+    filters.push("side = ?");
+    values.push(side);
+  }
+
+  addMultiFilter(filters, values, "opening_name || '|' || eco", openings);
 
   addMultiFilter(filters, values, "time_class", timeClass);
 
@@ -269,6 +284,8 @@ export async function GET(request: Request) {
           event,
           played_at AS playedAt,
           time_class AS timeClass,
+          opening_name AS openingName,
+          eco,
           move_number AS moveNumber,
           ply,
           side,
@@ -413,6 +430,8 @@ export async function POST(request: Request) {
         event,
         played_at,
         time_class,
+        opening_name,
+        eco,
         move_number,
         ply,
         side,
@@ -427,7 +446,7 @@ export async function POST(request: Request) {
         loss_cp,
         severity,
         analysis_depth
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     for (const puzzleChunk of chunks(uniquePuzzles, SQL_CHUNK_SIZE)) {
@@ -449,6 +468,8 @@ export async function POST(request: Request) {
             puzzle.event,
             puzzle.playedAt,
             puzzle.timeClass,
+            puzzle.openingName,
+            puzzle.eco,
             puzzle.moveNumber,
             puzzle.ply,
             puzzle.side,

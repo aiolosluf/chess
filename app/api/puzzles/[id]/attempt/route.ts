@@ -79,6 +79,8 @@ export async function POST(request: Request) {
           event,
           played_at AS playedAt,
           time_class AS timeClass,
+          opening_name AS openingName,
+          eco,
           move_number AS moveNumber,
           ply,
           side,

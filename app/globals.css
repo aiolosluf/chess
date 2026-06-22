@@ -562,6 +562,47 @@ input:focus {
   gap: 12px;
 }
 
+.practice-history-panel {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.practice-attempt-list {
+  display: grid;
+  gap: 8px;
+}
+
+.practice-attempt-row {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px;
+}
+
+.practice-attempt-row div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.practice-attempt-row strong,
+.practice-attempt-row span,
+.practice-attempt-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.practice-attempt-row small {
+  color: var(--muted);
+}
+
 .practice-filter-grid {
   display: grid;
   gap: 8px;
@@ -576,6 +617,14 @@ input:focus {
 .practice-filter-grid span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.opening-filter-field {
+  align-content: start;
+}
+
+.opening-filter-field input {
+  min-height: 40px;
 }
 
 .multi-filter-grid {
@@ -1590,6 +1639,11 @@ button.game-row {
   }
 
   .practice-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .practice-attempt-row {
+    align-items: stretch;
     grid-template-columns: 1fr;
   }
 

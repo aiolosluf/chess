@@ -61,6 +61,8 @@ type AnalysisResult = {
   event: string;
   playedAt: string;
   timeClass: string;
+  openingName: string;
+  eco: string;
   moveNumber: number;
   ply: number;
   side: "w" | "b";
@@ -85,6 +87,31 @@ type PuzzleRecord = AnalysisResult & {
   lastPracticedAt: string | null;
 };
 
+type GameRecord = {
+  id: number;
+  sourceName?: string;
+  sourcePlatform: string;
+  sourceUsername: string;
+  pgn: string;
+  gameHeaders: string;
+  gameTitle: string;
+  white: string;
+  black: string;
+  event: string;
+  playedAt: string;
+  timeClass: string;
+  openingName: string;
+  eco: string;
+  userSide: "w" | "b";
+};
+
+type PracticeAttemptRecord = PuzzleRecord & {
+  eventId: number;
+  attemptedAt: string;
+  correct: number;
+  improvementCp: number;
+};
+
 type PuzzleStats = {
   total: number;
   attempts: number;
@@ -107,6 +134,12 @@ type PracticeHistoryRow = {
 type PracticeHistory = {
   daily: PracticeHistoryRow[];
   weekly: PracticeHistoryRow[];
+};
+
+type OpeningOption = {
+  openingName: string;
+  eco: string;
+  count: number;
 };
 
 type EngineAnalysis = {
@@ -143,6 +176,7 @@ type VariationLine = {
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
 const WORSE_MARGIN_CP = 15;
+const MIN_PUZZLE_IMPROVEMENT_CP = 100;
 const FIXED_ANALYSIS_DEPTH = 18;
 const PIECES: Record<string, string> = {
   wk: "♔",
@@ -216,6 +250,9 @@ const COPY = {
     game: "棋局",
     depth: "深度",
     timeClass: "时间类型",
+    myColor: "执色",
+    opening: "开局",
+    openingSearch: "搜索开局",
     gameDate: "棋局日期",
     range: "范围",
     notLoaded: "未载入",
@@ -269,6 +306,8 @@ const COPY = {
     retry: "重试",
     next: "下一题",
     reviewGame: "回顾棋局",
+    practiceHistory: "解题历史",
+    noPracticeHistory: "还没有解题记录",
     closeAnalysis: "关闭分析",
     flipBoard: "反转棋盘",
     engineAnalysis: "引擎分析",
@@ -309,6 +348,9 @@ const COPY = {
     game: "Game",
     depth: "Depth",
     timeClass: "Time class",
+    myColor: "Color",
+    opening: "Opening",
+    openingSearch: "Search openings",
     gameDate: "Game date",
     range: "Range",
     notLoaded: "Not loaded",
@@ -362,6 +404,8 @@ const COPY = {
     retry: "Retry",
     next: "Next",
     reviewGame: "Review game",
+    practiceHistory: "Practice history",
+    noPracticeHistory: "No practice history yet",
     closeAnalysis: "Close analysis",
     flipBoard: "Flip board",
     engineAnalysis: "Engine analysis",
@@ -454,7 +498,7 @@ function classifyLoss(lossCp: number): Severity | null {
     return "mistake";
   }
 
-  if (lossCp >= 70) {
+  if (lossCp > MIN_PUZZLE_IMPROVEMENT_CP) {
     return "inaccuracy";
   }
 
@@ -678,6 +722,35 @@ function lossScoreLabel(cp: number) {
   return value.toFixed(1);
 }
 
+function openingValue(openingName: string, eco: string) {
+  return `${openingName}|${eco}`;
+}
+
+function openingLabel(openingName: string, eco: string) {
+  if (!openingName && !eco) {
+    return "Unknown";
+  }
+
+  const compact = (openingName || "Unknown")
+    .replace(/\bDefense\b/g, "")
+    .replace(/\bVariation\b/g, "")
+    .replace(/\s*:\s*/g, ", ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return eco ? `${compact} (${eco})` : compact;
+}
+
+function openingNameFromHeaders(headers: Record<string, string>) {
+  if (headers.Opening) {
+    return headers.Opening;
+  }
+
+  const slug = (headers.ECOUrl || "").split("/").filter(Boolean).at(-1) ?? "";
+  return slug
+    ? decodeURIComponent(slug).replace(/-/g, " ").replace(/\s{2,}/g, " ").trim()
+    : "";
+}
+
 function improvementScoreLabel(cp: number) {
   const value = Math.round(cp) / 100;
   const sign = value > 0 ? "+" : "";
@@ -773,6 +846,48 @@ function apiErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "请求失败";
 }
 
+function gameToAnalysisPuzzle(game: GameRecord): PuzzleRecord {
+  const startFen = new Chess().fen();
+
+  return {
+    id: -game.id,
+    localId: `game-${game.id}`,
+    createdAt: "",
+    sourceName: game.sourceName || game.sourcePlatform || "PGN",
+    sourcePlatform: game.sourcePlatform,
+    sourceUsername: game.sourceUsername,
+    sourceGameId: game.id,
+    dedupeKey: `game-${game.id}`,
+    gamePgn: game.pgn,
+    gameHeaders: game.gameHeaders,
+    gameTitle: game.gameTitle,
+    white: game.white,
+    black: game.black,
+    event: game.event,
+    playedAt: game.playedAt,
+    timeClass: game.timeClass,
+    openingName: game.openingName,
+    eco: game.eco,
+    moveNumber: 1,
+    ply: 0,
+    side: game.userSide,
+    previousMoveSan: "",
+    previousMoveUci: "",
+    fenBefore: startFen,
+    fenAfter: startFen,
+    playedMoveSan: "",
+    playedMoveUci: "",
+    bestMoveSan: "",
+    bestMoveUci: "",
+    lossCp: 0,
+    severity: "inaccuracy",
+    analysisDepth: FIXED_ANALYSIS_DEPTH,
+    attempts: 0,
+    solves: 0,
+    lastPracticedAt: null,
+  };
+}
+
 async function readJsonError(response: Response) {
   try {
     const payload = (await response.json()) as { error?: string };
@@ -799,8 +914,12 @@ export default function Home() {
   const [manualTimeClass, setManualTimeClass] = useState("");
   const [manualPlayedAt, setManualPlayedAt] = useState("");
   const [practiceRange, setPracticeRange] = useState("all");
+  const [practiceSide, setPracticeSide] = useState("all");
   const [practiceTimeClasses, setPracticeTimeClasses] = useState<string[]>([]);
   const [practiceSources, setPracticeSources] = useState<string[]>([]);
+  const [openingSearch, setOpeningSearch] = useState("");
+  const [openingOptions, setOpeningOptions] = useState<OpeningOption[]>([]);
+  const [practiceOpenings, setPracticeOpenings] = useState<string[]>([]);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
   const [selectedResultIds, setSelectedResultIds] = useState<Set<string>>(
     () => new Set()
@@ -825,6 +944,7 @@ export default function Home() {
     daily: [],
     weekly: [],
   });
+  const [practiceAttempts, setPracticeAttempts] = useState<PracticeAttemptRecord[]>([]);
   const [statsOpen, setStatsOpen] = useState(false);
   const [activePuzzle, setActivePuzzle] = useState<PuzzleRecord | null>(null);
   const [boardFen, setBoardFen] = useState("");
@@ -936,6 +1056,22 @@ export default function Home() {
   useEffect(() => {
     let mounted = true;
 
+    async function openGameAnalysisFromUrl() {
+      const gameId = new URLSearchParams(window.location.search).get("analysisGameId");
+      if (!gameId) {
+        return;
+      }
+
+      const response = await fetch(`/api/games/${encodeURIComponent(gameId)}`);
+      if (!response.ok) {
+        throw new Error(await readJsonError(response));
+      }
+      const payload = (await response.json()) as { game?: GameRecord };
+      if (mounted && payload.game) {
+        setAnalysisPuzzle(gameToAnalysisPuzzle(payload.game));
+      }
+    }
+
     async function loadInitialPuzzles() {
       try {
         const response = await fetch("/api/puzzles");
@@ -946,6 +1082,7 @@ export default function Home() {
         const payload = (await response.json()) as {
           puzzles: PuzzleRecord[];
           stats: Partial<PuzzleStats>;
+          practiceHistory?: Partial<PracticeHistory>;
         };
 
         if (!mounted) {
@@ -954,6 +1091,11 @@ export default function Home() {
 
         setPuzzles(payload.puzzles ?? []);
         setStats(normalizeStats(payload.stats));
+        setPracticeHistory({
+          daily: payload.practiceHistory?.daily ?? [],
+          weekly: payload.practiceHistory?.weekly ?? [],
+        });
+        await loadPracticeAttempts();
 
         if (payload.puzzles?.length) {
           const randomResponse = await fetch("/api/puzzles/random");
@@ -976,6 +1118,7 @@ export default function Home() {
             });
           }
         }
+        await openGameAnalysisFromUrl();
       } catch (error) {
         if (mounted) {
           setMessage(apiErrorMessage(error));
@@ -990,6 +1133,52 @@ export default function Home() {
       engineRef.current?.dispose();
     };
   }, []);
+
+  async function loadPracticeAttempts() {
+    try {
+      const response = await fetch("/api/practice-history?limit=20");
+      if (!response.ok) {
+        throw new Error(await readJsonError(response));
+      }
+      const payload = (await response.json()) as {
+        history?: PracticeAttemptRecord[];
+      };
+      setPracticeAttempts(payload.history ?? []);
+    } catch {
+      setPracticeAttempts([]);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        if (openingSearch.trim()) {
+          params.set("q", openingSearch.trim());
+        }
+        const response = await fetch(`/api/openings?${params}`);
+        if (!response.ok) {
+          throw new Error(await readJsonError(response));
+        }
+        const payload = (await response.json()) as {
+          openings?: OpeningOption[];
+        };
+        if (!cancelled) {
+          setOpeningOptions(payload.openings ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setOpeningOptions([]);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [openingSearch]);
 
   async function loadPuzzles() {
     try {
@@ -1010,6 +1199,7 @@ export default function Home() {
         daily: payload.practiceHistory?.daily ?? [],
         weekly: payload.practiceHistory?.weekly ?? [],
       });
+      await loadPracticeAttempts();
 
       if (!activePuzzle && payload.puzzles?.length) {
         await loadRandomPuzzle();
@@ -1030,6 +1220,8 @@ export default function Home() {
           ? practiceTimeClasses.join(",")
           : "all",
         sourcePlatform: practiceSources.length ? practiceSources.join(",") : "all",
+        side: practiceSide,
+        openings: practiceOpenings.length ? practiceOpenings.join(",") : "all",
       });
       const response = await fetch(`/api/puzzles/random?${params}`);
       if (!response.ok) {
@@ -1176,6 +1368,8 @@ export default function Home() {
             event,
             playedAt,
             timeClass: manualTimeClass,
+            openingName: openingNameFromHeaders(headers),
+            eco: headers.ECO ?? "",
             moveNumber,
             ply: index + 1,
             side: move.color,
@@ -1263,6 +1457,7 @@ export default function Home() {
         setActivePuzzle(payload.puzzle);
       }
       await loadPuzzles();
+      await loadPracticeAttempts();
     } catch (error) {
       setMessage(apiErrorMessage(error));
     }
@@ -1806,6 +2001,37 @@ export default function Home() {
                 onToggle={(value) => toggleFilterValue(value, setPracticeSources)}
               />
             </label>
+            <label>
+              <span>{copy.myColor}</span>
+              <select
+                value={practiceSide}
+                onChange={(event) => setPracticeSide(event.target.value)}
+              >
+                <option value="all">{copy.all}</option>
+                <option value="w">{sideLabels.w}</option>
+                <option value="b">{sideLabels.b}</option>
+              </select>
+            </label>
+            <label className="opening-filter-field">
+              <span>{copy.opening}</span>
+              <input
+                value={openingSearch}
+                onChange={(event) => setOpeningSearch(event.target.value)}
+                placeholder={copy.openingSearch}
+              />
+              <MultiSelectDropdown
+                allLabel={copy.all}
+                values={openingOptions.map((opening) =>
+                  openingValue(opening.openingName, opening.eco)
+                )}
+                selected={practiceOpenings}
+                labelForValue={(value) => {
+                  const [name, eco] = value.split("|");
+                  return openingLabel(name, eco);
+                }}
+                onToggle={(value) => toggleFilterValue(value, setPracticeOpenings)}
+              />
+            </label>
           </div>
 
           <ChessBoard
@@ -1999,6 +2225,41 @@ export default function Home() {
               <BookOpen size={16} aria-hidden="true" />
               {copy.library}
             </Link>
+          </div>
+
+          <div className="practice-history-panel">
+            <div className="result-head">
+              <strong>{copy.practiceHistory}</strong>
+              <span>{practiceAttempts.length}</span>
+            </div>
+            {practiceAttempts.length ? (
+              <div className="practice-attempt-list">
+                {practiceAttempts.map((attempt) => (
+                  <article className="practice-attempt-row" key={attempt.eventId}>
+                    <div>
+                      <strong>{attempt.gameTitle}</strong>
+                      <span>
+                        {attempt.moveNumber}. {attempt.playedMoveSan} / {attempt.bestMoveSan}
+                      </span>
+                      <small>
+                        {attempt.attemptedAt} · {attempt.correct ? copy.correct : copy.improved} ·{" "}
+                        {improvementScoreLabel(attempt.improvementCp)}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setAnalysisPuzzle(attempt)}
+                    >
+                      <Search size={15} aria-hidden="true" />
+                      {copy.reviewGame}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">{copy.noPracticeHistory}</div>
+            )}
           </div>
         </section>
         ) : null}

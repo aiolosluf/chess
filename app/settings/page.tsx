@@ -39,6 +39,8 @@ type ImportedGame = {
   event: string;
   playedAt: string;
   timeClass: string;
+  openingName: string;
+  eco: string;
   analysisDepth: number;
   puzzleCount: number;
   userSide: "w" | "b";
@@ -70,6 +72,8 @@ type PuzzleCandidate = {
   event: string;
   playedAt: string;
   timeClass: string;
+  openingName: string;
+  eco: string;
   moveNumber: number;
   ply: number;
   side: "w" | "b";
@@ -180,7 +184,7 @@ const COPY = {
   },
 } satisfies Record<Locale, Record<string, string>>;
 
-const WORSE_MARGIN_CP = 70;
+const MIN_PUZZLE_IMPROVEMENT_CP = 100;
 const FIXED_ANALYSIS_DEPTH = 18;
 const BATCH_SIZE = 12;
 let backgroundTask: Promise<void> | null = null;
@@ -229,7 +233,7 @@ function classifyLoss(lossCp: number): Severity | null {
     return "mistake";
   }
 
-  if (lossCp >= WORSE_MARGIN_CP) {
+  if (lossCp > MIN_PUZZLE_IMPROVEMENT_CP) {
     return "inaccuracy";
   }
 
@@ -389,7 +393,7 @@ export default function SettingsPage() {
     normalizeSettings()
   );
   const depth = FIXED_ANALYSIS_DEPTH;
-  const [isBusy, setIsBusy] = useState(false);
+  const [isBusy, setIsBusy] = useState(() => Boolean(backgroundTask));
   const [message, setMessage] = useState(COPY.zh.ready);
   const [stats, setStats] = useState({
     chesscom: { total: 0, pending: 0, latestPlayedAt: "", puzzleCount: 0 },
@@ -404,6 +408,8 @@ export default function SettingsPage() {
   });
   const engineRef = useRef<BrowserStockfish | null>(null);
   const cancelRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const lastBusyRef = useRef(Boolean(backgroundTask));
   const copy = COPY[locale];
 
   const loadSettings = useCallback(async () => {
@@ -475,15 +481,33 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     const timer = window.setTimeout(() => {
       void loadSettings();
       void loadGameStats();
     }, 0);
 
     return () => {
+      isMountedRef.current = false;
       window.clearTimeout(timer);
     };
   }, [loadGameStats, loadSettings]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const busy = Boolean(backgroundTask);
+      if (busy === lastBusyRef.current) {
+        return;
+      }
+      lastBusyRef.current = busy;
+      setIsBusy(busy);
+      if (!busy && isMountedRef.current) {
+        void loadGameStats();
+      }
+    }, 1500);
+
+    return () => window.clearInterval(timer);
+  }, [loadGameStats]);
 
   async function saveSettings(next?: {
     chessComUsername?: string;
@@ -581,21 +605,31 @@ export default function SettingsPage() {
       return;
     }
 
+    lastBusyRef.current = true;
+    setIsBusy(true);
     setMessage(label);
     window.alert(locale === "zh" ? "后台正在运行，可以继续使用其它页面。" : "Running in the background. You can keep using other pages.");
     backgroundTask = task()
       .then(async () => {
-        await loadGameStats();
-        setMessage(copy.done);
+        if (isMountedRef.current) {
+          await loadGameStats();
+          setMessage(copy.done);
+        }
         window.alert(locale === "zh" ? "后台任务已运行完。" : "Background task finished.");
       })
       .catch((error) => {
         const text = error instanceof Error ? error.message : copy.loadFailed;
-        setMessage(text);
+        if (isMountedRef.current) {
+          setMessage(text);
+        }
         window.alert(text);
       })
       .finally(() => {
         backgroundTask = null;
+        if (isMountedRef.current) {
+          lastBusyRef.current = false;
+          setIsBusy(false);
+        }
       });
   }
 
@@ -811,6 +845,8 @@ export default function SettingsPage() {
         event: game.event,
         playedAt: game.playedAt,
         timeClass: game.timeClass,
+        openingName: game.openingName,
+        eco: game.eco,
         moveNumber: Math.floor(index / 2) + 1,
         ply: index + 1,
         side: move.color,

@@ -33,9 +33,11 @@ export async function GET(request: Request) {
           OR lower(white) LIKE lower(?)
           OR lower(black) LIKE lower(?)
           OR lower(source_username) LIKE lower(?)
-          OR lower(event) LIKE lower(?))`
+          OR lower(event) LIKE lower(?)
+          OR lower(opening_name) LIKE lower(?)
+          OR lower(eco) LIKE lower(?))`
       );
-      values.push(...Array(5).fill(`%${query}%`));
+      values.push(...Array(7).fill(`%${query}%`));
     }
 
     const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
@@ -58,6 +60,8 @@ export async function GET(request: Request) {
           played_at AS playedAt,
           user_side AS userSide,
           time_class AS timeClass,
+          opening_name AS openingName,
+          eco,
           analysis_depth AS analysisDepth,
           (
             SELECT COUNT(*)
@@ -82,7 +86,7 @@ export async function GET(request: Request) {
       filteredStatsValues.push(username);
     }
     if (query) {
-      filteredStatsValues.push(...Array(5).fill(`%${query}%`));
+      filteredStatsValues.push(...Array(7).fill(`%${query}%`));
     }
     const statsWhere = statsFilters.length
       ? `WHERE ${statsFilters.join(" AND ")}`

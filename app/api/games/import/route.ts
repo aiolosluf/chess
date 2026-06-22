@@ -188,8 +188,10 @@ async function saveGames(
       event,
       played_at,
       user_side,
-      time_class
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      time_class,
+      opening_name,
+      eco
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   for (const gameChunk of chunks(uniqueGames, SQL_CHUNK_SIZE)) {
@@ -208,7 +210,9 @@ async function saveGames(
           game.event,
           game.playedAt,
           game.userSide,
-          game.timeClass
+          game.timeClass,
+          game.openingName,
+          game.eco
         )
       )
     );

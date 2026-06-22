@@ -12,6 +12,8 @@ export type ParsedImportedGame = {
   sourceUrl: string;
   gameKey: string;
   timeClass: string;
+  openingName: string;
+  eco: string;
 };
 
 export function cleanUsername(value: unknown) {
@@ -85,6 +87,23 @@ export function normalizeTimeClass(value: string) {
   return "classical";
 }
 
+export function openingNameFromHeaders(headers: Record<string, string>) {
+  if (headers.Opening) {
+    return headers.Opening;
+  }
+
+  const ecoUrl = headers.ECOUrl || "";
+  const slug = ecoUrl.split("/").filter(Boolean).at(-1) ?? "";
+  if (!slug) {
+    return "";
+  }
+
+  return decodeURIComponent(slug)
+    .replace(/-/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function parseImportedGame(
   platform: Platform,
   username: string,
@@ -122,6 +141,8 @@ export function parseImportedGame(
     sourceUrl,
     gameKey,
     timeClass: normalizeTimeClass(headers.TimeControl || headers.TimeClass || ""),
+    openingName: openingNameFromHeaders(headers),
+    eco: headers.ECO || "",
   };
 }
 

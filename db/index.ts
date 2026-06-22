@@ -41,6 +41,8 @@ async function ensurePuzzleSchema(db: D1Database) {
       event TEXT NOT NULL,
       played_at TEXT NOT NULL,
       time_class TEXT NOT NULL DEFAULT '',
+      opening_name TEXT NOT NULL DEFAULT '',
+      eco TEXT NOT NULL DEFAULT '',
       move_number INTEGER NOT NULL,
       ply INTEGER NOT NULL,
       side TEXT NOT NULL,
@@ -85,6 +87,8 @@ async function ensurePuzzleSchema(db: D1Database) {
       played_at TEXT NOT NULL,
       user_side TEXT NOT NULL,
       time_class TEXT NOT NULL DEFAULT '',
+      opening_name TEXT NOT NULL DEFAULT '',
+      eco TEXT NOT NULL DEFAULT '',
       analysis_depth INTEGER NOT NULL DEFAULT 18,
       puzzle_generated_at TEXT
     )`),
@@ -185,6 +189,18 @@ async function ensurePuzzleSchema(db: D1Database) {
     );
   }
 
+  if (!columnNames.has("opening_name")) {
+    migrations.push(
+      db.prepare("ALTER TABLE puzzles ADD COLUMN opening_name TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
+  if (!columnNames.has("eco")) {
+    migrations.push(
+      db.prepare("ALTER TABLE puzzles ADD COLUMN eco TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
   if (migrations.length) {
     await db.batch(migrations);
   }
@@ -200,6 +216,12 @@ async function ensurePuzzleSchema(db: D1Database) {
     .run();
   await db
     .prepare("CREATE INDEX IF NOT EXISTS puzzles_time_class_idx ON puzzles (time_class)")
+    .run();
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS puzzles_side_idx ON puzzles (side)")
+    .run();
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS puzzles_opening_idx ON puzzles (opening_name, eco)")
     .run();
 
   const settingsColumns = await db.prepare("PRAGMA table_info(user_settings)").all();
@@ -264,8 +286,44 @@ async function ensurePuzzleSchema(db: D1Database) {
     );
   }
 
+  if (!gameNames.has("opening_name")) {
+    gameMigrations.push(
+      db.prepare("ALTER TABLE games ADD COLUMN opening_name TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
+  if (!gameNames.has("eco")) {
+    gameMigrations.push(
+      db.prepare("ALTER TABLE games ADD COLUMN eco TEXT NOT NULL DEFAULT ''")
+    );
+  }
+
   if (gameMigrations.length) {
     await db.batch(gameMigrations);
   }
+
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS games_opening_idx ON games (opening_name, eco)")
+    .run();
+  await db
+    .prepare(
+      `UPDATE games
+      SET
+        opening_name = COALESCE(json_extract(game_headers, '$.Opening'), ''),
+        eco = COALESCE(json_extract(game_headers, '$.ECO'), '')
+      WHERE opening_name = ''
+        AND game_headers <> ''`
+    )
+    .run();
+  await db
+    .prepare(
+      `UPDATE puzzles
+      SET
+        opening_name = COALESCE(json_extract(game_headers, '$.Opening'), ''),
+        eco = COALESCE(json_extract(game_headers, '$.ECO'), '')
+      WHERE opening_name = ''
+        AND game_headers <> ''`
+    )
+    .run();
 }
 

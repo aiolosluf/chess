@@ -68,11 +68,20 @@ function buildFilters(request: Request) {
   const values: string[] = [];
   const sourcePlatform = params.get("sourcePlatform") ?? "";
   const timeClass = params.get("timeClass") ?? "";
+  const side = params.get("side") ?? "";
+  const openings = params.get("openings") ?? "";
   const from = dateCutoff(params.get("range"));
 
   addMultiFilter(filters, values, "source_platform", sourcePlatform);
 
   addMultiFilter(filters, values, "time_class", timeClass);
+
+  if (side === "w" || side === "b") {
+    filters.push("side = ?");
+    values.push(side);
+  }
+
+  addMultiFilter(filters, values, "opening_name || '|' || eco", openings);
 
   if (from) {
     filters.push("replace(played_at, '.', '-') >= replace(?, '.', '-')");
@@ -107,6 +116,8 @@ export async function GET(request: Request) {
           event,
           played_at AS playedAt,
           time_class AS timeClass,
+          opening_name AS openingName,
+          eco,
           move_number AS moveNumber,
           ply,
           side,

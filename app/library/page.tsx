@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -23,6 +23,8 @@ type PuzzleRecord = {
   sourceUsername: string;
   sourceGameId: number | null;
   timeClass: string;
+  openingName: string;
+  eco: string;
   gameTitle: string;
   white: string;
   black: string;
@@ -55,11 +57,14 @@ type GameRecord = {
   id: number;
   sourcePlatform: string;
   sourceUsername: string;
+  gameHeaders: string;
   gameTitle: string;
   white: string;
   black: string;
   playedAt: string;
   timeClass: string;
+  openingName: string;
+  eco: string;
   analysisDepth: number;
   puzzleCount: number;
   puzzleGeneratedAt: string | null;
@@ -185,6 +190,39 @@ function lossScoreLabel(cp: number) {
   return value.toFixed(1);
 }
 
+function openingLabel(openingName: string, eco: string) {
+  if (!openingName && !eco) {
+    return "Unknown";
+  }
+
+  const compact = (openingName || "Unknown")
+    .replace(/\bDefense\b/g, "")
+    .replace(/\bVariation\b/g, "")
+    .replace(/\s*:\s*/g, ", ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return eco ? `${compact} (${eco})` : compact;
+}
+
+function openingLabelForGame(game: GameRecord) {
+  if (game.openingName) {
+    return openingLabel(game.openingName, game.eco);
+  }
+
+  try {
+    const headers = JSON.parse(game.gameHeaders || "{}") as Record<string, string>;
+    const slug = (headers.ECOUrl || "").split("/").filter(Boolean).at(-1) ?? "";
+    const name =
+      headers.Opening ||
+      (slug
+        ? decodeURIComponent(slug).replace(/-/g, " ").replace(/\s{2,}/g, " ").trim()
+        : "");
+    return openingLabel(name, game.eco || headers.ECO || "");
+  } catch {
+    return openingLabel("", game.eco);
+  }
+}
+
 async function readJsonError(response: Response) {
   try {
     const payload = (await response.json()) as { error?: string };
@@ -216,10 +254,6 @@ export default function LibraryPage() {
   const [message, setMessage] = useState("");
 
   const copy = COPY[locale];
-  const accuracy = useMemo(
-    () => (stats.attempts ? `${Math.round((stats.solves / stats.attempts) * 100)}%` : "0%"),
-    [stats.attempts, stats.solves]
-  );
 
   const loadPuzzles = useCallback(async () => {
     setIsLoading(true);
@@ -250,7 +284,21 @@ export default function LibraryPage() {
       };
       setPuzzles(payload.puzzles ?? []);
       setSelectedIds(new Set());
-      setStats(normalizeStats(payload.stats));
+      if (selectedGameId) {
+        const summaryParams = new URLSearchParams(params);
+        summaryParams.delete("sourceGameId");
+        const summaryResponse = await fetch(`/api/puzzles?${summaryParams}`);
+        if (summaryResponse.ok) {
+          const summaryPayload = (await summaryResponse.json()) as {
+            stats: Partial<PuzzleStats>;
+          };
+          setStats(normalizeStats(summaryPayload.stats));
+        } else {
+          setStats(normalizeStats(payload.stats));
+        }
+      } else {
+        setStats(normalizeStats(payload.stats));
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : copy.loadFailed);
     } finally {
@@ -371,7 +419,6 @@ export default function LibraryPage() {
       <section className="library-summary" aria-label="library stats">
         <Stat label={copy.total} value={stats.total} />
         <Stat label={copy.attempts} value={stats.attempts} />
-        <Stat label={copy.accuracy} value={accuracy} />
         <Stat label={copy.averageLoss} value={lossScoreLabel(stats.averageLoss)} />
       </section>
 
@@ -418,11 +465,19 @@ export default function LibraryPage() {
                     {game.timeClass || "Unknown"} · {formatDate(game.playedAt, locale)}
                   </span>
                   <small>
-                    {game.sourcePlatform} / {game.sourceUsername || "PGN"} · d
+                    {openingLabelForGame(game)} · {game.sourcePlatform} / {game.sourceUsername || "PGN"} · d
                     {game.analysisDepth} · {game.puzzleCount}{" "}
                     {locale === "zh" ? "题" : "puzzles"}
                   </small>
                 </button>
+                {selectedGameId === game.id ? (
+                  <Link
+                    className="secondary-button game-review-link"
+                    href={`/?analysisGameId=${game.id}`}
+                  >
+                    {locale === "zh" ? "回顾棋局" : "Review"}
+                  </Link>
+                ) : null}
               </article>
             ))}
           </div>
